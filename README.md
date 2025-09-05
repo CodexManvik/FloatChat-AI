@@ -1,61 +1,58 @@
-# Project Setup & Task Instructions
+# FloatChat - ARGO Ocean Data Explorer
 
-## 1️⃣ Python Environment
-- Create a Python environment. I used **Python 3.13.5**.
-- Install dependencies:
+An AI-powered conversational interface for exploring ARGO ocean data using Streamlit.
 
-```powershell
-python -m pip install -r requirements.txt
-```
+## Features
 
----
+- 🌊 Interactive chatbot for natural language queries about ocean data
+- 🗺️ Geospatial visualization of ARGO float locations
+- 📊 Interactive temperature and salinity profile plots
+- 🔧 Sidebar controls for region, date range, and data type filtering
+- 💬 Clean chat interface with message history
+- 📈 Real-time data statistics and metrics
 
-## 2️⃣ Tasks & Assignments
+## Installation
 
-### Nitu & Shashwat
+1. Install dependencies:
+\`\`\`bash
+pip install -r requirements.txt
+\`\`\`
 
-- Work on **Chroma** or any other database integration.
-- Keep track of **all changes** and push them to the **`updates`** branch.
+2. Run the application:
+\`\`\`bash
+streamlit run app.py
+\`\`\`
 
----
+## Usage
 
-### Archit & Nemat
+1. **Select Filters**: Use the sidebar to choose ocean region, date range, and data type
+2. **Ask Questions**: Type natural language queries like:
+   - "Show me salinity profiles near the equator in March 2023"
+   - "What's the temperature distribution in the Pacific?"
+   - "Find floats with high salinity readings"
+3. **Explore Data**: View interactive maps and plots generated from your queries
+4. **Analyze Results**: Check the quick stats panel for data summaries
 
-- Store all `.csv` files in:
+## Architecture
 
-```
-app/core/data/raw
-```
+The app is designed to be modular and production-ready:
 
-- Verify the directory structure.
-- Run the ingestion + app in PowerShell:
+- `query_backend()`: Placeholder function for backend integration
+- `create_float_map()`: Generates interactive geospatial visualizations
+- `create_profile_plots()`: Creates temperature/salinity depth profiles
+- Clean separation of UI components and data processing
 
-```powershell
-python -m app.ingest.ingest && uvicorn app.core.main:app --reload
-```
+## Future Enhancements
 
-- After starting the app, open the browser at:
+- Connect to real ARGO database (SQL + Chroma vector store)
+- Integrate Qwen LLM for advanced query processing
+- Add more visualization types (time series, 3D plots)
+- Implement user authentication and query history
+- Add data export functionality
 
-```
-http://127.0.0.1:8000/docs
-```
+## Data Sources
 
-- Focus on **/api/ask** implementation.
-- ⚠ **Do NOT start ingestion accidentally**, your PC cannot handle the full load in time.
-- Push **all changes** to the **`updates`** branch.
-
----
-
-### Khushi
-
-- Work on the **frontend**.
-- Push your initial changes directly to the **`main`** branch.
-- After the initial change, push to updates
----
-
-## 3️⃣ General Notes
-
-- Ask me if you get stuck or face issues.
-
----
-
+This demo uses simulated ARGO float data. In production, it will connect to:
+- ARGO Global Data Assembly Centre (GDAC)
+- Real-time quality controlled oceanographic measurements
+- Historical and near real-time data streams
