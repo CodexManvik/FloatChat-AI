@@ -19,51 +19,22 @@ This project demonstrates a complete, end-to-end implementation of a **Retrieval
 
 ## **🚀 Live Demo**
 
-\[PASTE A SCREENSHOT OR GIF OF YOUR STREAMLIT APP IN ACTION HERE\]
+<img width="1919" height="920" alt="image" src="https://github.com/user-attachments/assets/0fbbc5ff-bfe3-4e20-a693-c151d1b17d8a" />
+
+
+<img width="1427" height="770" alt="image" src="https://github.com/user-attachments/assets/8e5436c5-ce9e-423f-8154-33f57501d728" />
+
+
+<img width="1390" height="362" alt="image" src="https://github.com/user-attachments/assets/59f80176-2903-4cd4-b45b-c684783ffd4a" />
+
+
 
 ## **🏛️ System Architecture**
 
 The application is built on a modern RAG architecture that separates data processing, storage, retrieval, and presentation into distinct, communicating components.  
-\[PASTE YOUR GENERATED DIAGRAM IMAGE HERE\]
 
-### **DiagramGPT Prompt**
+<img width="972" height="680" alt="diagram-export-20-9-2025-10_55_28-pm" src="https://github.com/user-attachments/assets/ec87814a-bef2-4457-8372-527ee23d897a" />
 
-To generate a high-quality diagram for this project, you can use the following prompt with a tool like DiagramGPT or Mermaid Chart:  
-"Create a detailed System Architecture Diagram for a RAG (Retrieval-Augmented Generation) application named 'FloatChat' using the Mermaid.js graph TD syntax.  
-**Goal:** The diagram should clearly illustrate the flow of data from the user's query to the final visualized answer.  
-**Components to Include:**
-
-1. **User**: The person interacting with the system.  
-2. **Streamlit Frontend**: The web interface. Label it with the Python logo.  
-3. **FastAPI Backend**: The central API server. Label it with the FastAPI logo.  
-4. **Ollama Server**: The service running the local LLMs. It should contain two sub-components:  
-   * **Embedding Model (nomic-embed-text)**  
-   * **LLM (phi3:mini)**  
-5. **ChromaDB**: The vector database.  
-6. **PostgreSQL**: The relational database. Label it with the PostgreSQL logo.
-
-**Flows to Illustrate:**
-
-1. **RAG Query Flow**:  
-   * User submits a text query to the Streamlit Frontend.  
-   * Streamlit sends a POST request to the /query endpoint on the FastAPI Backend.  
-   * The backend sends the query text to the Ollama Server's Embedding Model to get a vector.  
-   * The backend uses this vector to search ChromaDB, which returns relevant document metadata (including postgres\_ids).  
-   * The backend constructs a prompt with the user's query and the retrieved documents and sends it to the Ollama Server's LLM.  
-   * The LLM generates a text answer.  
-   * The backend returns the text answer and the metadata to the Streamlit Frontend.  
-2. **Data Fetching Flow for Plots**:  
-   * Based on the postgres\_ids from the first response, the Streamlit Frontend sends a POST request to the /get\_profiles endpoint on the FastAPI Backend.  
-   * The backend queries the PostgreSQL database using the provided IDs.  
-   * PostgreSQL returns the full measurement data (depth, temp, salinity).  
-   * The backend returns this data to the Streamlit Frontend.  
-   * The Streamlit Frontend uses this data to render the plots.
-
-**Styling Instructions:**
-
-* Use a left-to-right flow.  
-* Use different shapes for different component types (e.g., rectangles for services, cylinders for databases).  
-* Use clear arrow labels to describe the data being passed (e.g., 'User Query', 'API Request', 'Vector Search', 'SQL Query')."
 
 ## **🛠️ Technology Stack**
 
@@ -154,5 +125,6 @@ The application will be available at http://localhost:8501.
 * chroma\_db/: Directory where the local ChromaDB is persisted.
 
 ## **🙏 Acknowledgements**
+
 
 This project is powered by the invaluable data provided by the **Argo Global Data Assembly Centers**. Argo is an international program that measures the temperature, salinity, and other properties of the ocean's upper 2000 meters.
