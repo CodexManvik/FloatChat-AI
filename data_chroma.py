@@ -29,11 +29,21 @@ for i in range(0,total_rows,batch_size):
     for index,row in batch_df.iterrows():
         temp_str = f"{row['temperature']:.2f}°C" if pd.notna(row['temperature']) else "not available"
         sal_str = f"{row['salinity']:.2f} PSU" if pd.notna(row['salinity']) else "not available"
+        
+        # Add BGC parameters if available
+        bgc_info = ""
+        if 'oxygen' in row and pd.notna(row['oxygen']):
+            bgc_info += f" The dissolved oxygen was {row['oxygen']:.2f} ml/L."
+        if 'ph' in row and pd.notna(row['ph']):
+            bgc_info += f" The pH was {row['ph']:.2f}."
+        if 'chlorophyll' in row and pd.notna(row['chlorophyll']):
+            bgc_info += f" The chlorophyll concentration was {row['chlorophyll']:.3f} mg/m³."
+        
         doc = (
             f"On {row['time'].strftime('%Y-%m-%d')}, an observation was made at "
             f"latitude {row['lat']} and longitude {row['lon']}. "
             f"At a depth of {row['depth']} meters, the temperature was {temp_str} "
-            f"and the salinity was {sal_str}."
+            f"and the salinity was {sal_str}.{bgc_info}"
         )
         meta = {
             'postgres_id': int(row['id']),
