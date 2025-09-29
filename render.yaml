@@ -2,7 +2,7 @@ services:
   - type: web
     name: floatchat-frontend
     env: python
-    buildCommand: pip install -r frontend_requirements.txt
+    buildCommand: buildCommand: export CARGO_HOME=/tmp/cargo && export RUSTUP_HOME=/tmp/rustup && pip install --upgrade pip && pip install -r requirements.txt
     startCommand: streamlit run app.py --server.port=$PORT --server.address=0.0.0.0
     healthCheckPath: /_stcore/health
 
@@ -19,3 +19,4 @@ services:
     databases:
       - name: argo
         user: postgres
+
