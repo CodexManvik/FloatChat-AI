@@ -2,8 +2,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import chromadb
 from chromadb.utils import embedding_functions
-import ollama
-import pandas as pd 
+import pandas as pd
 from datetime import datetime
 from sqlalchemy import create_engine
 from export_utils import export_to_ascii, export_to_netcdf, export_to_csv
@@ -11,6 +10,13 @@ from fastapi.responses import Response
 from nl_to_sql import NLToSQLTranslator, process_analytical_query
 import config
 import uuid
+
+# Conditional imports for LLM providers
+if config.LLM_PROVIDER == "huggingface":
+    from huggingface_hub import InferenceClient
+    from sentence_transformers import SentenceTransformer
+elif config.LLM_PROVIDER == "ollama":
+    import ollama
 
 engine = create_engine(config.DATABASE_URL)
 
@@ -41,14 +47,27 @@ class QueryResponse(BaseModel):
     sql_results: list[dict] = None  # Optional SQL results for analytical queries
 
 try:
-    client = chromadb.PersistentClient(path=config.CHROMA_PATH)
-    ollama_ef = embedding_functions.OllamaEmbeddingFunction(
-        url=f"{config.OLLAMA_HOST}/api/embeddings",
-        model_name=config.EMBEDDING_MODEL
-    )
+    if config.VECTOR_STORE == "memory":
+        client = chromadb.Client()
+        print("Using in-memory ChromaDB")
+    else:
+        client = chromadb.PersistentClient(path=config.CHROMA_PATH)
+        print("Using persistent ChromaDB")
+
+    if config.LLM_PROVIDER == "huggingface":
+        # Use sentence-transformers for embeddings
+        embedding_model = SentenceTransformer(config.EMBEDDING_MODEL)
+        def hf_embedding_function(texts):
+            embeddings = embedding_model.encode(texts)
+            return embeddings.tolist()
+        ef = hf_embedding_function
+    else:
+        # Fallback to default
+        ef = embedding_functions.DefaultEmbeddingFunction()
+
     collection = client.get_collection(
         name="argo_measurements",
-        embedding_function=ollama_ef
+        embedding_function=ef
     )
     print("successfully connected to chromadb collection")
 except Exception as e:
@@ -228,7 +247,7 @@ async def query_rag_pipeline(request: QueryRequest):
 
 async def semantic_search_query(query_text: str):
     """Handle semantic search queries using ChromaDB"""
-    
+
     results = collection.query(
         query_texts=[query_text],
         n_results=5
@@ -252,12 +271,18 @@ async def semantic_search_query(query_text: str):
     Answer:
     """
 
-    response = ollama.chat(
-        model=config.LLM_MODEL,
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    answer = response["message"]["content"]
+    if config.LLM_PROVIDER == "huggingface":
+        client = InferenceClient(model=config.LLM_MODEL, token=config.HUGGINGFACE_API_KEY)
+        response = client.text_generation(prompt, max_new_tokens=500, temperature=0.1)
+        answer = response
+    elif config.LLM_PROVIDER == "ollama":
+        response = ollama.chat(
+            model=config.LLM_MODEL,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        answer = response["message"]["content"]
+    else:
+        answer = "LLM provider not configured."
 
     return {
         "answer": answer,

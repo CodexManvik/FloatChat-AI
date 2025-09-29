@@ -6,15 +6,12 @@ Creates embeddings that understand float profiles and relationships
 from sqlalchemy import create_engine
 import pandas as pd
 import chromadb
-from chromadb.utils import embedding_functions
+from sentence_transformers import SentenceTransformer
 import config
 
-ollama_ef = embedding_functions.OllamaEmbeddingFunction(
-    url=f"{config.OLLAMA_HOST}/api/embeddings",
-    model_name=config.EMBEDDING_MODEL
-)
+embed_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
 
-client = chromadb.PersistentClient(path=config.CHROMA_PATH)
+client = chromadb.EphemeralClient() if config.VECTOR_STORE == "memory" else chromadb.PersistentClient(path=config.CHROMA_PATH)
 
 # Delete old collection and create new one
 try:
@@ -25,7 +22,7 @@ except:
 
 collection = client.get_or_create_collection(
     name="argo_measurements",
-    embedding_function=ollama_ef
+    embedding_function=embed_model.encode
 )
 
 engine = create_engine(config.DATABASE_URL)
@@ -175,7 +172,7 @@ def create_profile_summaries():
     
     profile_collection = client.get_or_create_collection(
         name="argo_profiles",
-        embedding_function=ollama_ef
+        embedding_function=embed_model.encode
     )
     
     documents = []

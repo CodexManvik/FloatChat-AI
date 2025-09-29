@@ -88,6 +88,24 @@ def create_argo_tables():
     
     print("✅ ARGO database schema created successfully!")
 
+def clear_existing_data():
+    """Clear existing ARGO data from database"""
+    print("Clearing existing ARGO data...")
+
+    clear_sql = """
+    DELETE FROM measurements;
+    DELETE FROM profiles;
+    DELETE FROM floats;
+    """
+
+    with engine.connect() as conn:
+        for statement in clear_sql.split(';'):
+            if statement.strip():
+                conn.execute(text(statement))
+        conn.commit()
+
+    print("✅ Existing data cleared!")
+
 def simulate_real_argo_floats():
     """
     Create realistic ARGO float data structure from your gridded data
@@ -97,9 +115,9 @@ def simulate_real_argo_floats():
     # Load your existing data
     ds = xr.open_dataset("tempsal.nc")
     
-    # Create a smaller subset for testing - optimized for 50k documents
-    subset = ds.isel(TAXIS=slice(0, 20))  # 20 time steps (reduced from 50)
-    subset = subset.sel(XAXIS=slice(60, 100), YAXIS=slice(-20, 20))  # Smaller Indian Ocean region
+    # Create a subset limited to ~30k measurements
+    subset = ds.isel(TAXIS=slice(0, 50))  # 50 time steps
+    subset = subset.sel(XAXIS=slice(50, 120), YAXIS=slice(-30, 30))  # Larger Indian Ocean region
     
     # Convert to DataFrame
     df = subset[["TEMP", "SAL"]].to_dataframe().reset_index()
@@ -114,7 +132,12 @@ def simulate_real_argo_floats():
     
     # Remove NaN values
     df = df.dropna()
-    
+
+    # Limit to 100k measurements as requested
+    if len(df) > 100000:
+        df = df.head(100000)
+        print(f"Limited to 100,000 measurements for ingestion")
+
     print(f"Processing {len(df)} measurements...")
     
     # Group by location and time to create "virtual floats"
@@ -129,7 +152,7 @@ def simulate_real_argo_floats():
     profile_counter = 1
     
     for (lat, lon), location_df in location_groups:
-        if len(location_df) < 5:  # Skip locations with too few measurements
+        if len(location_df) < 1:  # Skip locations with too few measurements
             continue
             
         # Create a virtual float
@@ -247,6 +270,10 @@ def ingest_argo_data():
     print("🌊 Processing ARGO Float Data...")
     print("=" * 50)
     
+    # Step 0: Clear existing data
+    print("0. Clearing existing ARGO data...")
+    clear_existing_data()
+
     # Step 1: Create proper database schema
     print("1. Creating ARGO database schema...")
     create_argo_tables()

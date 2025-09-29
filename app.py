@@ -8,6 +8,7 @@ import time
 import random
 import pydeck as pdk
 import requests
+import config
 
 # Page configuration
 st.set_page_config(
@@ -217,8 +218,8 @@ def query_backend(user_query, region="Pacific", date_range=None, data_type="All"
     Calls the live FastAPI backend to get a response from the RAG pipeline
     and fetches detailed data for visualizations.
     """
-    query_api_url = "http://127.0.0.1:8000/query"
-    profiles_api_url = "http://127.0.0.1:8000/get_profiles"
+    query_api_url = config.BACKEND_URL + "/query"
+    profiles_api_url = config.BACKEND_URL + "/get_profiles"
     
     # --- Step 1: Call the /query endpoint to get relevant documents ---
     try:

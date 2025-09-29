@@ -95,13 +95,14 @@ class APIClient:
         try:
             response.raise_for_status()
         except requests.exceptions.HTTPError as e:
+            error_data = None
             try:
                 error_data = response.json()
                 error_message = error_data.get('detail', str(e))
             except (json.JSONDecodeError, ValueError):
                 error_message = f"HTTP {response.status_code}: {response.text}"
             
-            raise APIException(error_message, response.status_code, error_data if 'error_data' in locals() else None)
+            raise APIException(error_message, response.status_code, error_data)
         
         try:
             return response.json()
@@ -139,7 +140,7 @@ class APIClient:
         
         try:
             payload = {"query_text": query_text.strip()}
-            response = self._make_request('POST', '/query', json=payload, timeout=30)
+            response = self._make_request('POST', '/query', json=payload, timeout=120)
             data = self._validate_response(response)
             
             return QueryResponse(
@@ -166,7 +167,7 @@ class APIClient:
         
         try:
             payload = {"ids": ids}
-            response = self._make_request('POST', '/get_profiles', json=payload, timeout=30)
+            response = self._make_request('POST', '/get_profiles', json=payload, timeout=120)
             data = self._validate_response(response)
             
             if isinstance(data, list):
