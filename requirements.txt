@@ -24,5 +24,12 @@ netCDF4>=1.7.2
 
 # Utilities
 python-multipart==0.0.6
-pydantic==2.5.0
 python-dotenv==1.0.0
+
+streamlit==1.28.1
+
+
+
+requests
+
+pydantic>=2.5.0
