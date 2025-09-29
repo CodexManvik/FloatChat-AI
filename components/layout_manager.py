@@ -41,12 +41,14 @@ class DashboardLayout:
             font-size: 2.5rem;
             font-weight: bold;
             margin: 0;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            text-shadow: none;
+            color: #d1d5db !important;
         }
         .header-subtitle {
             font-size: 1.2rem;
             margin: 0.5rem 0 0 0;
             opacity: 0.9;
+            color: #d1d5db !important;
         }
         .status-indicator {
             display: inline-block;

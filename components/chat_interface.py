@@ -37,7 +37,7 @@ class ChatInterface:
         # Sample queries for user guidance
         self.sample_queries = self._get_sample_queries()
     
-    def render_chat_container(self) -> None:
+    def render_chat_container(self) -> None: 
         """Render the main chat interface"""
         
         st.subheader("💬 Ask Questions About ARGO Data")
@@ -188,7 +188,7 @@ class ChatInterface:
             
             if metadata.get('float_ids'):
                 float_count = len(metadata['float_ids'])
-                enhanced += f" from {float_count} ARGO float{'s' if float_count > 1 else ''}"
+                enhanced += f" from {float_count} ARGO float{{'s' if float_count > 1 else ''}}"
         
         # Add query type information
         query_type = metadata.get('query_type', 'unknown')
@@ -435,7 +435,7 @@ class ChatInterface:
                                         'depth': 'Depth (m)'
                                     }
                                 )
-                                fig.update_yaxis(autorange="reversed")  # Oceanographic convention
+                                fig.update_yaxes(autorange="reversed")  # Oceanographic convention
                                 fig.update_layout(height=400)
                                 st.plotly_chart(fig, use_container_width=True)
             else:
@@ -456,7 +456,7 @@ class ChatInterface:
                                 'depth': 'Depth (m)'
                             }
                         )
-                        fig.update_yaxis(autorange="reversed")
+                        fig.update_yaxes(autorange="reversed")
                         fig.update_layout(height=400)
                         st.plotly_chart(fig, use_container_width=True)
         

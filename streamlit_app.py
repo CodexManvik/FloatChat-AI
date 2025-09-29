@@ -48,16 +48,20 @@ except ImportError as e:
     logger.warning(f"Some components not yet available: {e}")
     APIClient = None
     DataTransformer = None
+    init_session_state = None
+    validate_data_quality = None
+    dashboard_config = None
 
 def main():
     """Main application entry point"""
     
     # Initialize session state
     if APIClient:
-        init_session_state()
+        if init_session_state:
+            init_session_state()
         
         # Initialize API client if not already done
-        if st.session_state.api_client is None:
+        if st.session_state.api_client is None and dashboard_config:
             st.session_state.api_client = APIClient(base_url=dashboard_config.API_BASE_URL)
     else:
         # Fallback initialization
@@ -182,6 +186,13 @@ def render_chat_tab():
 
 def render_fallback_layout():
     """Fallback layout when layout manager is not available"""
+    st.markdown("""
+    <style>
+    h1 {
+        color: #FFFFFF !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
     st.title("🌊 ARGO Float Data Dashboard")
     st.markdown("**Government Oceanographic Data Visualization System**")
     
