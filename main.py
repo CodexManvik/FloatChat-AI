@@ -65,7 +65,7 @@ try:
         # Fallback to default
         ef = embedding_functions.DefaultEmbeddingFunction()
 
-    collection = client.get_collection(
+    collection = client.get_or_create_collection(
         name="argo_measurements",
         embedding_function=ef
     )
