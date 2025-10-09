@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: floatchat-frontend
+    env: python
+    buildCommand: buildCommand: export CARGO_HOME=/tmp/cargo && export RUSTUP_HOME=/tmp/rustup && pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: streamlit run app.py --server.port=$PORT --server.address=0.0.0.0
+    healthCheckPath: /_stcore/health
+
+  - type: web
+    name: floatchat-backend
+    env: python
+    buildCommand: export CARGO_HOME=/tmp/cargo && export RUSTUP_HOME=/tmp/rustup && pip install --upgrade pip && pip install -r backend_requirements.txt
+    startCommand: uvicorn main:app --host=0.0.0.0 --port=$PORT
+    healthCheckPath: /health
+
+  - type: pserv
+    name: floatchat-postgres
+    env: postgresql
+    databases:
+      - name: argo
+        user: postgres
+
