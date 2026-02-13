@@ -56,13 +56,8 @@ def main():
     """Main application entry point"""
     
     # Initialize session state
-    if APIClient:
-        if init_session_state:
-            init_session_state()
-        
-        # Initialize API client if not already done
-        if st.session_state.api_client is None and dashboard_config:
-            st.session_state.api_client = APIClient(base_url=dashboard_config.API_BASE_URL)
+    if init_session_state:
+        init_session_state()
     else:
         # Fallback initialization
         if 'initialized' not in st.session_state:
@@ -71,6 +66,18 @@ def main():
             st.session_state.chat_history = []
             st.session_state.selected_floats = []
             st.session_state.filter_state = {}
+    
+    # Initialize API client if not already done
+    if st.session_state.api_client is None:
+        try:
+            if APIClient and dashboard_config:
+                st.session_state.api_client = APIClient(base_url=dashboard_config.API_BASE_URL)
+            else:
+                # Fallback to direct URL
+                st.session_state.api_client = APIClient(base_url="http://localhost:8000")
+        except Exception as e:
+            logger.error(f"Failed to initialize API client: {e}")
+            st.session_state.api_client = None
     
     # Initialize layout manager
     try:
@@ -205,6 +212,7 @@ def render_fallback_layout():
         )
         
         st.header("System Status")
+        # Check API client
         if st.session_state.get('api_client'):
             try:
                 health_data = st.session_state.api_client.health_check()
@@ -213,9 +221,14 @@ def render_fallback_layout():
                 else:
                     st.error("❌ Backend Disconnected")
             except Exception as e:
-                st.error("❌ Connection Failed")
+                st.error(f"❌ Connection Failed: {str(e)}")
         else:
-            st.warning("⚠️ API Client Not Available")
+            st.warning("⚠️ API Client Not Available - Initializing...")
+            try:
+                st.session_state.api_client = APIClient(base_url="http://localhost:8000")
+                st.success("✅ API Client Initialized")
+            except Exception as e:
+                st.error(f"❌ Failed to initialize API client: {str(e)}")
     
     # Simple content based on tab
     if tab_selection == "Overview":
