@@ -5,10 +5,19 @@ Supports both local development and cloud deployment
 
 import os
 from urllib.parse import quote_plus
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Database Configuration
-DB_PASSWORD = os.getenv("DB_PASSWORD", "Arcombad1030")
-DATABASE_URL = os.getenv("DATABASE_URL", f"postgresql+psycopg2://postgres:{quote_plus(DB_PASSWORD)}@localhost:5432/argo")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "")
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    if DB_PASSWORD:
+        DATABASE_URL = f"postgresql+psycopg://postgres:{quote_plus(DB_PASSWORD)}@localhost:5432/argo"
+    else:
+        DATABASE_URL = "postgresql+psycopg://nematsachdeva@localhost:5432/argo"
 
 # LLM and Embedding Configuration
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "huggingface")  # Options: huggingface, ollama
