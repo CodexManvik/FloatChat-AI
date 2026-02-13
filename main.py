@@ -55,15 +55,31 @@ try:
         print("Using persistent ChromaDB")
 
     if config.LLM_PROVIDER == "huggingface":
-        # Use sentence-transformers for embeddings
+        # Use sentence-transformers for embeddings with correct signature
         embedding_model = SentenceTransformer(config.EMBEDDING_MODEL)
-        def hf_embedding_function(texts):
-            embeddings = embedding_model.encode(texts)
-            return embeddings.tolist()
-        ef = hf_embedding_function
+        
+        class CustomEmbeddingFunction:
+            def __call__(self, input):
+                embeddings = embedding_model.encode(input)
+                return embeddings.tolist()
+        
+        ef = CustomEmbeddingFunction()
     else:
-        # Fallback to default
-        ef = embedding_functions.DefaultEmbeddingFunction()
+        # Use Ollama embeddings
+        class OllamaEmbeddingFunction:
+            def __call__(self, input):
+                import requests
+                response = requests.post(
+                    f"{config.OLLAMA_HOST}/api/embeddings",
+                    json={"model": config.EMBEDDING_MODEL, "prompt": input[0] if isinstance(input, list) else input}
+                )
+                if response.status_code == 200:
+                    return [response.json()["embedding"]]
+                else:
+                    # Fallback to default
+                    return embedding_functions.DefaultEmbeddingFunction()(input)
+        
+        ef = OllamaEmbeddingFunction()
 
     collection = client.get_or_create_collection(
         name="argo_measurements",
@@ -72,6 +88,8 @@ try:
     print("successfully connected to chromadb collection")
 except Exception as e:
     print(f"failed to connect to chromadb: {e}")
+    import traceback
+    traceback.print_exc()
     collection = None
 
 @app.post("/query", response_model=QueryResponse)
