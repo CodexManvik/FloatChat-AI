@@ -1,0 +1,51 @@
+# One-command demo: docker compose up --build
+# Frontend: http://localhost:8501   API docs: http://localhost:8000/docs
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: argo
+      POSTGRES_USER: floatchat
+      POSTGRES_PASSWORD: floatchat
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U floatchat -d argo"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build: .
+    command: sh -c "python ingest.py --if-empty && uvicorn main:app --host 0.0.0.0 --port 8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://floatchat:floatchat@db:5432/argo
+      CHROMA_PATH: /data/chroma_db
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build: .
+    command: streamlit run app.py --server.port 8501 --server.address 0.0.0.0
+    environment:
+      BACKEND_URL: http://backend:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  chroma:
