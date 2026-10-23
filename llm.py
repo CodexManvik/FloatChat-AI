@@ -14,7 +14,12 @@ logger = logging.getLogger(__name__)
 
 
 def is_configured() -> bool:
-    return bool(config.LLM_BASE_URL and config.LLM_MODEL)
+    if not (config.LLM_BASE_URL and config.LLM_MODEL):
+        return False
+    # Hosted APIs (Groq, OpenAI, ...) need a key; until one is added, run without an LLM
+    if config.LLM_BASE_URL.startswith("https://") and not config.LLM_API_KEY:
+        return False
+    return True
 
 
 def chat(prompt: str, system: str | None = None, temperature: float = 0.2, max_tokens: int = 600) -> str | None:
