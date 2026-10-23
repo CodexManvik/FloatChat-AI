@@ -1,622 +1,455 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
+"""
+FloatChat backend - FastAPI service that answers natural language questions
+about ARGO float data using NL-to-SQL for analytical questions and RAG
+(ChromaDB + optional LLM) for descriptive ones.
+"""
+
+import json
+import logging
+
 import chromadb
-from chromadb.utils import embedding_functions
 import pandas as pd
-from datetime import datetime
-from sqlalchemy import create_engine
-from export_utils import export_to_ascii, export_to_netcdf, export_to_csv
+from chromadb.utils import embedding_functions
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
-from nl_to_sql import NLToSQLTranslator, process_analytical_query
+from pydantic import BaseModel
+from sqlalchemy import create_engine, text
+
 import config
-import uuid
+import llm
+from export_utils import export_to_ascii, export_to_csv, export_to_netcdf
+from nl_to_sql import NLToSQLTranslator, process_analytical_query
+from ocean_regions import MONTHS, parse_filters
 
-# Conditional imports for LLM providers
-if config.LLM_PROVIDER == "huggingface":
-    from huggingface_hub import InferenceClient
-    from sentence_transformers import SentenceTransformer
-elif config.LLM_PROVIDER == "ollama":
-    import ollama
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("floatchat")
 
-engine = create_engine(config.DATABASE_URL)
+engine = create_engine(config.DATABASE_URL, pool_pre_ping=True)
 
 app = FastAPI(
-    title="Ocean Data RAG API",
-    description="An API to query oceanographic data using natural language with NL-to-SQL capabilities"
+    title="FloatChat API",
+    description="Query ARGO oceanographic data in natural language (NL-to-SQL + RAG)",
+    version="2.0.0",
+)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+SYSTEM_PROMPT = (
+    "You are FloatChat, an oceanography assistant for ARGO float data in the Indian Ocean. "
+    "Answer using only the facts in the provided context. Be concise (under 150 words), "
+    "mention float IDs, dates and locations where relevant, and use Markdown bullet points. "
+    "If the context does not answer the question, say so."
 )
 
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "database": "connected" if engine else "disconnected",
-        "chromadb": "connected" if collection else "disconnected"
-    }
 
-# Initialize NL-to-SQL translator
-nl_sql_translator = NLToSQLTranslator()
+def get_collection():
+    try:
+        client = chromadb.PersistentClient(path=config.CHROMA_PATH)
+        return client.get_collection(
+            config.CHROMA_COLLECTION,
+            embedding_function=embedding_functions.DefaultEmbeddingFunction(),
+        )
+    except Exception as e:
+        logger.warning(f"ChromaDB collection not available ({e}). Run `python ingest.py` first.")
+        return None
+
+
+collection = get_collection()
+
+try:
+    nl_sql_translator = NLToSQLTranslator()
+except Exception as e:
+    logger.warning(f"NL-to-SQL translator unavailable: {e}")
+    nl_sql_translator = None
+
+
+def df_records(df: pd.DataFrame) -> list[dict]:
+    """DataFrame -> JSON-safe list of dicts (NaN -> null, timestamps -> ISO)."""
+    return json.loads(df.to_json(orient="records", date_format="iso"))
+
+
+def read_sql(sql: str, **params) -> pd.DataFrame:
+    with engine.connect() as conn:
+        return pd.read_sql_query(text(sql), conn, params=params)
+
 
 class QueryRequest(BaseModel):
     query_text: str
 
+
 class QueryResponse(BaseModel):
     answer: str
+    query_type: str = "semantic"
     context_documents: list[str]
     retrieved_metadata: list[dict]
-    sql_results: list[dict] = None  # Optional SQL results for analytical queries
+    sql_results: list[dict] | None = None
 
-try:
-    if config.VECTOR_STORE == "memory":
-        client = chromadb.Client()
-        print("Using in-memory ChromaDB")
-    else:
-        client = chromadb.PersistentClient(path=config.CHROMA_PATH)
-        print("Using persistent ChromaDB")
 
-    if config.LLM_PROVIDER == "huggingface":
-        # Use sentence-transformers for embeddings with correct signature
-        embedding_model = SentenceTransformer(config.EMBEDDING_MODEL)
-        
-        class CustomEmbeddingFunction:
-            def __call__(self, input):
-                embeddings = embedding_model.encode(input)
-                return embeddings.tolist()
-        
-        ef = CustomEmbeddingFunction()
-    else:
-        # Use Ollama embeddings
-        class OllamaEmbeddingFunction:
-            def __call__(self, input):
-                import requests
-                response = requests.post(
-                    f"{config.OLLAMA_HOST}/api/embeddings",
-                    json={"model": config.EMBEDDING_MODEL, "prompt": input[0] if isinstance(input, list) else input}
-                )
-                if response.status_code == 200:
-                    return [response.json()["embedding"]]
-                else:
-                    # Fallback to default
-                    return embedding_functions.DefaultEmbeddingFunction()(input)
-        
-        ef = OllamaEmbeddingFunction()
+@app.get("/health")
+async def health_check():
+    try:
+        with engine.connect() as conn:
+            measurements = conn.execute(text("SELECT COUNT(*) FROM measurements")).scalar()
+        database = "connected"
+    except Exception:
+        measurements, database = 0, "disconnected"
+    return {
+        "status": "healthy" if database == "connected" and collection is not None else "degraded",
+        "database": database,
+        "measurements": measurements,
+        "chromadb": "connected" if collection is not None else "disconnected",
+        "indexed_profiles": collection.count() if collection is not None else 0,
+        "llm": llm.status(),
+    }
 
-    collection = client.get_or_create_collection(
-        name="argo_measurements",
-        embedding_function=ef
-    )
-    print("successfully connected to chromadb collection")
-except Exception as e:
-    print(f"failed to connect to chromadb: {e}")
-    import traceback
-    traceback.print_exc()
-    collection = None
+
+@app.get("/stats")
+async def get_stats():
+    """Headline numbers for the dataset."""
+    totals = read_sql("""
+        SELECT (SELECT COUNT(*) FROM floats) AS floats,
+               (SELECT COUNT(*) FROM profiles) AS profiles,
+               (SELECT COUNT(*) FROM measurements) AS measurements,
+               (SELECT COUNT(DISTINCT float_id) FROM measurements WHERE oxygen IS NOT NULL) AS bgc_floats,
+               (SELECT MIN(profile_date) FROM profiles) AS start_date,
+               (SELECT MAX(profile_date) FROM profiles) AS end_date,
+               (SELECT MAX(depth) FROM measurements) AS max_depth
+    """)
+    regions = read_sql("SELECT region, COUNT(*) AS profiles FROM profiles GROUP BY region ORDER BY profiles DESC")
+    return {**df_records(totals)[0], "regions": df_records(regions)}
+
+
+@app.get("/floats")
+async def get_floats():
+    """Latest position and surface readings of every float."""
+    df = read_sql("""
+        WITH latest AS (
+            SELECT DISTINCT ON (float_id) float_id, profile_id, profile_date, profile_lat, profile_lon, region
+            FROM profiles ORDER BY float_id, profile_date DESC
+        ),
+        counts AS (SELECT float_id, COUNT(*) AS n_profiles FROM profiles GROUP BY float_id),
+        surface AS (
+            SELECT DISTINCT ON (profile_id) profile_id, temperature, salinity
+            FROM measurements ORDER BY profile_id, depth
+        ),
+        bgc AS (SELECT DISTINCT float_id FROM measurements WHERE oxygen IS NOT NULL)
+        SELECT l.float_id, l.profile_date AS last_profile, l.profile_lat AS lat, l.profile_lon AS lon,
+               l.region, c.n_profiles, s.temperature AS surface_temperature, s.salinity AS surface_salinity,
+               (b.float_id IS NOT NULL) AS is_bgc
+        FROM latest l
+        JOIN counts c USING (float_id)
+        LEFT JOIN surface s USING (profile_id)
+        LEFT JOIN bgc b USING (float_id)
+        ORDER BY l.float_id
+    """)
+    return df_records(df)
+
 
 @app.post("/query", response_model=QueryResponse)
 async def query_rag_pipeline(request: QueryRequest):
     """
-    Enhanced query endpoint that handles both analytical (SQL) and semantic (RAG) queries
+    Handles both analytical (SQL) and semantic (RAG) queries
     """
-    if collection is None:
-        return {"answer": "Error: ChromaDB collection not available.", "context_documents": [], "retrieved_metadata": []}
-    
-    # Check if this is an analytical query that needs SQL
-    if nl_sql_translator.is_analytical_query(request.query_text):
+    question = request.query_text.strip()
+    if nl_sql_translator and nl_sql_translator.is_analytical_query(question):
         try:
-            # Process with enhanced NL-to-SQL
-            sql_result, error = process_analytical_query(request.query_text)
-            
-            if error:
-                # Fall back to semantic search if SQL fails
-                print(f"SQL processing failed: {error}")
-                return await semantic_search_query(request.query_text)
-            
-            # Extract enhanced SQL results
-            sql_query = sql_result['sql_query']
-            results_df = sql_result['results']
-            intent = sql_result['intent']
-            summary_stats = sql_result['summary_stats']
-            
-            if results_df.empty:
-                answer = f"Your analytical query executed successfully but returned no results. This might mean the data doesn't match your criteria. SQL executed: {sql_query}"
-                return {
-                    "answer": answer, 
-                    "context_documents": [f"SQL Query: {sql_query}"], 
-                    "retrieved_metadata": [{"query_type": "analytical", "intent": intent, "status": "no_results"}]
-                }
-            
-            # Generate a simple summary without LLM (faster)
-            results_preview = results_df.head(5).to_string(index=False)
-            
-            # Create a readable, formatted summary
-            def format_results_for_display(df, intent_type):
-                """Format results in a human-readable way based on query intent"""
-                
-                if intent_type == 'avg_by_depth':
-                    formatted_text = "**Temperature and Salinity by Depth Analysis:**\n\n"
-                    for _, row in df.head(10).iterrows():
-                        depth = f"{row['depth']:.0f}m"
-                        temp = f"{row['avg_temperature']:.2f}°C" if pd.notna(row['avg_temperature']) else "N/A"
-                        sal = f"{row['avg_salinity']:.2f} PSU" if pd.notna(row['avg_salinity']) else "N/A"
-                        count = f"{row['measurement_count']:.0f}" if pd.notna(row['measurement_count']) else "0"
-                        formatted_text += f"• **{depth} depth**: Temperature {temp}, Salinity {sal} ({count} measurements)\n"
-                    
-                elif intent_type == 'regional_comparison':
-                    formatted_text = "**Regional Ocean Analysis:**\n\n"
-                    for _, row in df.iterrows():
-                        region = row.get('region', 'Unknown Region')
-                        temp = f"{row['avg_temperature']:.2f}°C" if pd.notna(row['avg_temperature']) else "N/A"
-                        sal = f"{row['avg_salinity']:.2f} PSU" if pd.notna(row['avg_salinity']) else "N/A"
-                        count = f"{row['measurement_count']:.0f}" if pd.notna(row['measurement_count']) else "0"
-                        formatted_text += f"• **{region}**: Avg Temperature {temp}, Avg Salinity {sal} ({count} measurements)\n"
-                
-                elif intent_type == 'temporal_trends':
-                    formatted_text = "**Temporal Ocean Trends:**\n\n"
-                    for _, row in df.head(10).iterrows():
-                        month = row['month'].strftime('%B %Y') if hasattr(row['month'], 'strftime') else str(row['month'])
-                        temp = f"{row['avg_temperature']:.2f}°C" if pd.notna(row['avg_temperature']) else "N/A"
-                        sal = f"{row['avg_salinity']:.2f} PSU" if pd.notna(row['avg_salinity']) else "N/A"
-                        count = f"{row['measurement_count']:.0f}" if pd.notna(row['measurement_count']) else "0"
-                        formatted_text += f"• **{month}**: Temperature {temp}, Salinity {sal} ({count} measurements)\n"
-                
-                elif intent_type == 'float_summary':
-                    formatted_text = "**ARGO Float Performance Summary:**\n\n"
-                    for _, row in df.head(10).iterrows():
-                        float_id = row['float_id']
-                        profiles = f"{row['total_profiles']:.0f}" if pd.notna(row['total_profiles']) else "0"
-                        measurements = f"{row['total_measurements']:.0f}" if pd.notna(row['total_measurements']) else "0"
-                        temp = f"{row['avg_temperature']:.2f}°C" if pd.notna(row['avg_temperature']) else "N/A"
-                        depth_range = f"{row['min_depth']:.0f}-{row['max_depth']:.0f}m" if pd.notna(row['min_depth']) else "N/A"
-                        formatted_text += f"• **{float_id}**: {profiles} profiles, {measurements} measurements, Avg temp {temp}, Depth range {depth_range}\n"
-                
-                else:
-                    # Generic formatting for other query types
-                    formatted_text = "**Analysis Results:**\n\n"
-                    for i, (_, row) in enumerate(df.head(10).iterrows()):
-                        formatted_text += f"**Result {i+1}:**\n"
-                        for col, val in row.items():
-                            if pd.notna(val):
-                                if 'temperature' in col.lower():
-                                    formatted_text += f"  - {col.replace('_', ' ').title()}: {val:.2f}°C\n"
-                                elif 'salinity' in col.lower():
-                                    formatted_text += f"  - {col.replace('_', ' ').title()}: {val:.2f} PSU\n"
-                                elif 'depth' in col.lower():
-                                    formatted_text += f"  - {col.replace('_', ' ').title()}: {val:.0f}m\n"
-                                elif 'count' in col.lower():
-                                    formatted_text += f"  - {col.replace('_', ' ').title()}: {val:.0f}\n"
-                                else:
-                                    formatted_text += f"  - {col.replace('_', ' ').title()}: {val}\n"
-                        formatted_text += "\n"
-                
-                return formatted_text
-            
-            # Generate readable summary
-            formatted_results = format_results_for_display(results_df, intent)
-            
-            answer = f"""**Analytical Query Results**
+            result = analytical_query(question)
+            if result:
+                return result
+        except Exception as e:
+            logger.warning(f"SQL processing error, falling back to semantic search: {e}")
+    return semantic_search_query(question)
 
-**Query:** {request.query_text}
-**Analysis Type:** {intent.replace('_', ' ').title()}
-**Total Results:** {len(results_df)} data points
 
-{formatted_results}
+def format_results_for_display(df: pd.DataFrame, intent: str) -> str:
+    """Format SQL results as readable Markdown bullets based on query intent"""
 
-**Key Insights:**
-- Data spans {len(results_df)} measurements from ARGO float observations
-- Analysis covers temperature, salinity, and depth relationships
-- Results show oceanographic patterns in the selected region
+    def fmt(row, col, unit, digits=2):
+        val = row.get(col)
+        return f"{val:.{digits}f}{unit}" if pd.notna(val) else "N/A"
 
-*Note: This analysis is based on ARGO float data from the Indian Ocean region.*"""
-            
-            # Enhanced metadata for frontend (ensure JSON serializable)
-            sql_metadata = [{
-                'query_type': 'analytical',
-                'intent': str(intent),
-                'sql_query': str(sql_query),
-                'row_count': int(len(results_df)),
-                'column_count': int(len(results_df.columns)),
-                'columns': [str(col) for col in results_df.columns],
-                'execution_status': str(sql_result['execution_status']),
-                'summary_stats': summary_stats
-            }]
-            
-            # Convert DataFrame to JSON-serializable format
-            def convert_numpy_types(obj):
-                """Convert numpy types to Python native types"""
-                if hasattr(obj, 'dtype'):
-                    if 'int' in str(obj.dtype):
-                        return int(obj)
-                    elif 'float' in str(obj.dtype):
-                        return float(obj)
-                    elif 'bool' in str(obj.dtype):
-                        return bool(obj)
-                    else:
-                        return str(obj)
-                return obj
-            
-            # Limit results and convert numpy types
-            limited_df = results_df.head(200) if len(results_df) > 200 else results_df
-            limited_results = []
-            
-            for _, row in limited_df.iterrows():
-                row_dict = {}
-                for col, val in row.items():
-                    if pd.isna(val):
-                        row_dict[str(col)] = None
-                    else:
-                        row_dict[str(col)] = convert_numpy_types(val)
-                limited_results.append(row_dict)
-            
-            return {
-                "answer": answer,
-                "context_documents": [f"SQL Analysis ({intent}): {sql_query}"],
-                "retrieved_metadata": sql_metadata,
-                "sql_results": limited_results
-            }
-            
-        except (TimeoutError, Exception) as e:
-            print(f"SQL processing error: {e}")
-            # Fall back to semantic search for any error including timeouts
-            return await semantic_search_query(request.query_text)
-    
+    lines = []
+    if intent == "avg_by_depth":
+        for _, row in df.head(12).iterrows():
+            lines.append(f"- **{row['depth']:.0f} m**: {fmt(row, 'avg_temperature', ' °C')}, "
+                         f"{fmt(row, 'avg_salinity', ' PSU')} ({row['measurement_count']:.0f} readings)")
+    elif intent == "regional_comparison":
+        for _, row in df.iterrows():
+            lines.append(f"- **{row['region']}**: upper-100 m avg {fmt(row, 'avg_temperature', ' °C')}, "
+                         f"{fmt(row, 'avg_salinity', ' PSU')} ({row['profile_count']:.0f} profiles)")
+    elif intent == "depth_ranges":
+        for _, row in df.iterrows():
+            lines.append(f"- **{row['depth_range']}**: {fmt(row, 'avg_temperature', ' °C')}, "
+                         f"{fmt(row, 'avg_salinity', ' PSU')}, O₂ {fmt(row, 'avg_oxygen', ' µmol/kg', 1)}")
+    elif intent == "temporal_trends":
+        for _, row in df.head(12).iterrows():
+            month = row["month"].strftime("%B %Y") if hasattr(row["month"], "strftime") else str(row["month"])
+            lines.append(f"- **{month}**: {fmt(row, 'avg_temperature', ' °C')}, "
+                         f"{fmt(row, 'avg_salinity', ' PSU')} ({row['measurement_count']:.0f} readings)")
+    elif intent == "float_summary":
+        for _, row in df.head(10).iterrows():
+            lines.append(f"- **Float {row['float_id']}**: {row['total_profiles']:.0f} profiles, "
+                         f"avg {fmt(row, 'avg_temperature', ' °C')}, down to {row['max_depth']:.0f} m")
+    elif intent == "bgc_analysis":
+        for _, row in df.iterrows():
+            lines.append(f"- **{row['ocean_zone']}**: avg O₂ {fmt(row, 'avg_oxygen', ' µmol/kg', 1)} "
+                         f"(min {fmt(row, 'min_oxygen', '', 1)}, max {fmt(row, 'max_oxygen', '', 1)})")
     else:
-        # Use semantic search for descriptive queries
-        return await semantic_search_query(request.query_text)
+        for i, (_, row) in enumerate(df.head(10).iterrows()):
+            values = ", ".join(f"{col.replace('_', ' ')}: {val:.2f}" if isinstance(val, float) else f"{col.replace('_', ' ')}: {val}"
+                               for col, val in row.items() if pd.notna(val))
+            lines.append(f"- {values}")
+    if len(df) > len(lines):
+        lines.append(f"- *…and {len(df) - len(lines)} more rows (see the chart and table)*")
+    return "\n".join(lines)
 
-async def semantic_search_query(query_text: str):
-    """Handle semantic search queries using ChromaDB"""
 
-    results = collection.query(
-        query_texts=[query_text],
-        n_results=5
+INTENT_TITLES = {
+    "avg_by_depth": "Average temperature and salinity at each depth",
+    "regional_comparison": "Upper-ocean (0–100 m) conditions by region",
+    "depth_ranges": "Ocean conditions by depth layer",
+    "temporal_trends": "Monthly averages",
+    "float_summary": "Most active floats",
+    "bgc_analysis": "Dissolved oxygen by ocean zone",
+}
+
+
+def analytical_query(question: str) -> dict | None:
+    sql_result, error = process_analytical_query(question, nl_sql_translator)
+    if error:
+        logger.info(f"SQL path not used: {error}")
+        return None
+
+    sql_query, results_df, intent = sql_result["sql_query"], sql_result["results"], sql_result["intent"]
+    title = INTENT_TITLES.get(intent, "Query results")
+    formatted = format_results_for_display(results_df, intent)
+
+    insight = llm.chat(
+        f"Question: {question}\n\nSQL result (first rows):\n{results_df.head(15).to_string(index=False)}\n\n"
+        "In 2-3 sentences, explain the main oceanographic pattern in this result.",
+        system=SYSTEM_PROMPT,
     )
-
-    retrieved_documents = results['documents'][0]
-    retrieved_metadata = results['metadatas'][0]
-    context = "\n".join(retrieved_documents)
-
-    prompt = f"""
-    You are an expert oceanographic AI assistant.
-    Your task is to answer the user's question using only the facts present in the provided Context.
-    Be concise and factual. If the information is not in the context, say so.
-
-    Context:
-    {context}
-
-    Question:
-    {query_text}
-
-    Answer:
-    """
-
-    if config.LLM_PROVIDER == "huggingface":
-        client = InferenceClient(model=config.LLM_MODEL, token=config.HUGGINGFACE_API_KEY)
-        response = client.text_generation(prompt, max_new_tokens=500, temperature=0.1)
-        answer = response
-    elif config.LLM_PROVIDER == "ollama":
-        response = ollama.chat(
-            model=config.LLM_MODEL,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        answer = response["message"]["content"]
-    else:
-        answer = "LLM provider not configured."
+    answer = f"**{title}**\n\n{formatted}"
+    if insight:
+        answer += f"\n\n**What this means:** {insight}"
 
     return {
         "answer": answer,
-        "context_documents": retrieved_documents,
-        "retrieved_metadata": retrieved_metadata
+        "query_type": "analytical",
+        "context_documents": [sql_query],
+        "retrieved_metadata": [{
+            "query_type": "analytical",
+            "intent": intent,
+            "sql_query": sql_query,
+            "row_count": int(len(results_df)),
+            "columns": [str(c) for c in results_df.columns],
+            "summary_stats": sql_result["summary_stats"],
+        }],
+        "sql_results": df_records(results_df.head(200)),
     }
 
+
+def format_position(lat: float, lon: float) -> str:
+    return f"{abs(lat):.2f}°{'N' if lat >= 0 else 'S'}, {abs(lon):.2f}°{'E' if lon >= 0 else 'W'}"
+
+
+def chroma_where(filters: dict) -> dict | None:
+    clauses = [{key: value} for key, value in filters.items()]
+    if not clauses:
+        return None
+    return clauses[0] if len(clauses) == 1 else {"$and": clauses}
+
+
+def describe_filters(filters: dict) -> str:
+    parts = []
+    if "region" in filters:
+        parts.append(f"in the {filters['region']}")
+    if "month_num" in filters:
+        parts.append(f"in {MONTHS[filters['month_num'] - 1].title()}")
+    if "year" in filters:
+        parts.append(str(filters["year"]))
+    return " ".join(parts)
+
+
+def semantic_search_query(question: str) -> dict:
+    """Handle descriptive queries with vector search over profile summaries"""
+    if collection is None:
+        return {"answer": "The vector index is not built yet. Run `python ingest.py` and restart the API.",
+                "context_documents": [], "retrieved_metadata": []}
+
+    filters = parse_filters(question)
+    results = collection.query(query_texts=[question], n_results=8, where=chroma_where(filters))
+    filters_note = ""
+    if not results["ids"][0] and filters:
+        filters_note = (f"No profiles were recorded {describe_filters(filters)} in this dataset, "
+                        "so these are the closest matches overall.\n\n")
+        results = collection.query(query_texts=[question], n_results=8)
+
+    documents, metadata = results["documents"][0], results["metadatas"][0]
+    if not documents:
+        return {"answer": "I couldn't find any matching ARGO profiles.", "context_documents": [], "retrieved_metadata": []}
+
+    context = "\n".join(f"- {doc}" for doc in documents)
+    answer = llm.chat(f"Context:\n{context}\n\nQuestion: {question}", system=SYSTEM_PROMPT)
+    if not answer:
+        scope = f" {describe_filters(filters)}" if filters and not filters_note else ""
+        bullets = "\n".join(
+            f"- **Float {m['float_id']}**, cycle {m['cycle_number']} · {m['date']} · "
+            f"{format_position(m['lat'], m['lon'])} ({m['region']})"
+            for m in metadata
+        )
+        answer = (f"Here are the {len(metadata)} ARGO profiles{scope} most relevant to your question:\n\n"
+                  f"{bullets}\n\nTop match: {documents[0]}")
+
+    return {
+        "answer": filters_note + answer,
+        "query_type": "semantic",
+        "context_documents": documents,
+        "retrieved_metadata": metadata,
+    }
+
+
 class ProfileRequest(BaseModel):
-    ids: list[int]
+    ids: list[int] = []          # measurement ids (returns their whole profiles)
+    profile_ids: list[int] = []  # profile ids
 
-class ExportRequest(BaseModel):
-    format: str  # "ascii", "netcdf", "csv"
-    data_ids: list[int]
 
-# Pydantic model for a single row of measurement data
-class Measurement(BaseModel):
-    id: int
-    time: datetime
-    depth: float
-    lat: float
-    lon: float
-    temperature: float | None # Allow for null values
-    salinity: float | None    # Allow for null values
-
-# The new endpoint
-@app.post("/get_profiles", response_model=list[Measurement])
+@app.post("/get_profiles")
 async def get_profiles_by_ids(request: ProfileRequest):
     """
-    Receives a list of postgres_ids and returns the full measurement
-    data for each ID from the PostgreSQL database with float context.
+    Returns full measurement data (with float context) for the requested
+    profiles, or for the profiles that contain the requested measurement ids.
     """
-    if not request.ids:
+    if not request.ids and not request.profile_ids:
         return []
-    
-    if engine is None:
-        return {"error": "Database connection not available"}
+    df = read_sql("""
+        SELECT m.id, m.time, m.lat, m.lon, m.depth, m.pressure, m.temperature, m.salinity,
+               m.oxygen, m.float_id, m.profile_id, p.cycle_number, p.region, f.wmo_id
+        FROM measurements m
+        JOIN profiles p ON m.profile_id = p.profile_id
+        JOIN floats f ON m.float_id = f.float_id
+        WHERE m.profile_id = ANY(:profile_ids)
+           OR m.profile_id IN (SELECT profile_id FROM measurements WHERE id = ANY(:ids))
+        ORDER BY m.float_id, p.cycle_number, m.depth
+    """, ids=request.ids, profile_ids=request.profile_ids)
+    return df_records(df)
 
-    # Format the list of IDs for the SQL query
-    ids_tuple = tuple(request.ids)
-    
-    # Enhanced query with float and profile context
-    sql_query = """
-    SELECT 
-        m.id, m.time, m.lat, m.lon, m.depth, m.temperature, m.salinity,
-        m.oxygen, m.ph, m.chlorophyll, m.float_id, m.profile_id,
-        p.cycle_number, f.wmo_id
-    FROM measurements m
-    JOIN profiles p ON m.profile_id = p.profile_id  
-    JOIN floats f ON m.float_id = f.float_id
-    WHERE m.id IN %s
-    ORDER BY m.float_id, p.cycle_number, m.depth;
-    """
-    
-    try:
-        # Execute the query and load results into a DataFrame
-        df = pd.read_sql_query(sql_query, engine, params=(ids_tuple,))
-        
-        # Convert DataFrame to a list of dictionaries to match the Pydantic model
-        return df.to_dict(orient='records')
-        
-    except Exception as e:
-        print(f"Error querying PostgreSQL: {e}")
-        return []
 
 @app.get("/float/{float_id}")
 async def get_float_info(float_id: str):
     """Get comprehensive information about a specific ARGO float"""
-    
-    try:
-        # Get float basic info
-        float_sql = "SELECT * FROM floats WHERE float_id = %s;"
-        float_df = pd.read_sql_query(float_sql, engine, params=(float_id,))
-        
-        if float_df.empty:
-            return {"error": "Float not found"}
-        
-        # Get profile summary
-        profiles_sql = """
-        SELECT COUNT(*) as total_profiles, 
-               MIN(profile_date) as first_profile,
-               MAX(profile_date) as last_profile,
-               COUNT(DISTINCT DATE(profile_date)) as active_days
-        FROM profiles WHERE float_id = %s;
-        """
-        profile_summary = pd.read_sql_query(profiles_sql, engine, params=(float_id,))
-        
-        # Get measurement summary  
-        measurements_sql = """
-        SELECT COUNT(*) as total_measurements,
-               MIN(depth) as min_depth,
-               MAX(depth) as max_depth,
-               AVG(temperature) as avg_temp,
-               AVG(salinity) as avg_sal
-        FROM measurements WHERE float_id = %s;
-        """
-        measurement_summary = pd.read_sql_query(measurements_sql, engine, params=(float_id,))
-        
-        return {
-            "float_info": float_df.to_dict(orient='records')[0],
-            "profile_summary": profile_summary.to_dict(orient='records')[0],
-            "measurement_summary": measurement_summary.to_dict(orient='records')[0]
-        }
-        
-    except Exception as e:
-        return {"error": f"Failed to get float info: {str(e)}"}
+    float_df = read_sql("SELECT * FROM floats WHERE float_id = :fid", fid=float_id)
+    if float_df.empty:
+        return {"error": "Float not found"}
+    profile_summary = read_sql("""
+        SELECT COUNT(*) AS total_profiles, MIN(profile_date) AS first_profile,
+               MAX(profile_date) AS last_profile, COUNT(DISTINCT DATE(profile_date)) AS active_days
+        FROM profiles WHERE float_id = :fid
+    """, fid=float_id)
+    measurement_summary = read_sql("""
+        SELECT COUNT(*) AS total_measurements, MIN(depth) AS min_depth, MAX(depth) AS max_depth,
+               AVG(temperature) AS avg_temp, AVG(salinity) AS avg_sal
+        FROM measurements WHERE float_id = :fid
+    """, fid=float_id)
+    return {
+        "float_info": df_records(float_df)[0],
+        "profile_summary": df_records(profile_summary)[0],
+        "measurement_summary": df_records(measurement_summary)[0],
+    }
+
 
 @app.get("/profiles/float/{float_id}")
 async def get_float_profiles(float_id: str):
-    """Get all profiles for a specific float"""
-    
-    try:
-        sql_query = """
-        SELECT p.*, 
-               COUNT(m.id) as measurement_count,
-               AVG(m.temperature) as avg_temp,
-               AVG(m.salinity) as avg_sal,
-               MIN(m.depth) as min_depth,
-               MAX(m.depth) as max_depth
+    """Get all profiles (the trajectory) of a specific float"""
+    df = read_sql("""
+        SELECT p.*, COUNT(m.id) AS measurement_count, AVG(m.temperature) AS avg_temp,
+               AVG(m.salinity) AS avg_sal, MIN(m.depth) AS min_depth, MAX(m.depth) AS max_depth
         FROM profiles p
         LEFT JOIN measurements m ON p.profile_id = m.profile_id
-        WHERE p.float_id = %s
+        WHERE p.float_id = :fid
         GROUP BY p.profile_id
-        ORDER BY p.cycle_number;
-        """
-        
-        df = pd.read_sql_query(sql_query, engine, params=(float_id,))
-        return df.to_dict(orient='records')
-        
-    except Exception as e:
-        return {"error": f"Failed to get profiles: {str(e)}"}
+        ORDER BY p.cycle_number
+    """, fid=float_id)
+    return df_records(df)
+
+
+@app.get("/statistics/system")
+async def get_system_statistics():
+    """Summary statistics used by the dashboard"""
+    stats = await get_stats()
+    return {
+        "active_floats": stats["floats"],
+        "total_profiles": stats["profiles"],
+        "total_measurements": stats["measurements"],
+        "data_quality": 1.0,
+        "date_range": [stats["start_date"], stats["end_date"]],
+        "recent_activity": [],
+    }
+
+
+@app.get("/data/regions")
+async def get_regions():
+    regions = read_sql("SELECT DISTINCT region FROM profiles ORDER BY region")
+    return {"regions": regions["region"].tolist()}
+
+
+class ExportRequest(BaseModel):
+    format: str  # "ascii", "netcdf", "csv"
+    data_ids: list[int] = []     # measurement ids
+    profile_ids: list[int] = []  # whole profiles
+
 
 @app.post("/export")
 async def export_data(request: ExportRequest):
     """
     Export ARGO data in specified format (ASCII, NetCDF, CSV)
     """
+    exporters = {
+        "ascii": (export_to_ascii, "text/plain", "argo_data.txt"),
+        "netcdf": (export_to_netcdf, "application/octet-stream", "argo_data.nc"),
+        "csv": (export_to_csv, "text/csv", "argo_data.csv"),
+    }
+    fmt = request.format.lower()
+    if fmt not in exporters:
+        return {"error": "Unsupported format. Use 'ascii', 'netcdf', or 'csv'"}
     try:
-        if request.format.lower() == "ascii":
-            content = export_to_ascii(request.data_ids)
-            return Response(
-                content=content,
-                media_type="text/plain",
-                headers={"Content-Disposition": "attachment; filename=argo_data.txt"}
-            )
-        elif request.format.lower() == "netcdf":
-            content = export_to_netcdf(request.data_ids)
-            return Response(
-                content=content,
-                media_type="application/octet-stream",
-                headers={"Content-Disposition": "attachment; filename=argo_data.nc"}
-            )
-        elif request.format.lower() == "csv":
-            content = export_to_csv(request.data_ids)
-            return Response(
-                content=content,
-                media_type="text/csv",
-                headers={"Content-Disposition": "attachment; filename=argo_data.csv"}
-            )
-        else:
-            return {"error": "Unsupported format. Use 'ascii', 'netcdf', or 'csv'"}
-    
+        exporter, media_type, filename = exporters[fmt]
+        content = exporter(request.data_ids, request.profile_ids)
+        return Response(content=content, media_type=media_type,
+                        headers={"Content-Disposition": f"attachment; filename={filename}"})
     except Exception as e:
         return {"error": f"Export failed: {str(e)}"}
 
+
 @app.get("/sample-queries")
 async def get_sample_queries():
-    """Get comprehensive sample queries organized by category"""
+    """Sample queries organized by category"""
     from nl_to_sql import get_sample_analytical_queries
-    
-    analytical_queries = get_sample_analytical_queries()
-    
-    # Add extensibility-focused queries
-    analytical_queries["Multi-Dataset Analysis"] = [
-        "Compare ARGO floats with glider observations",
-        "Show satellite vs in-situ temperature differences", 
-        "Analyze buoy and float data in the same region",
-        "Cross-validate different sensor platforms"
-    ]
-    
-    semantic_queries = {
-        "Current Data (ARGO)": [
-            "Show me temperature measurements near the equator",
-            "Tell me about salinity profiles in deep water",
-            "What ARGO floats are active in the Indian Ocean?",
-            "Find measurements with high oxygen levels"
-        ],
-        
-        "Future Capabilities": [
-            "How would glider data complement ARGO observations?",
-            "What advantages do satellite measurements provide?",
-            "Explain the role of moored buoys in ocean monitoring",
-            "Describe BGC sensor capabilities across platforms"
-        ],
-        
-        "Contextual Queries": [
-            "How do different platforms collect ocean data?",
-            "What is the significance of multi-platform validation?",
-            "Tell me about ocean observation networks",
-            "Explain the importance of data integration"
-        ]
-    }
-    
+
     return {
-        "analytical_queries": analytical_queries,
-        "semantic_queries": semantic_queries,
-        "extensibility_info": {
-            "current_datasets": ["ARGO Floats"],
-            "planned_datasets": ["Gliders", "Buoys", "Satellites"],
-            "integration_ready": True
+        "analytical_queries": get_sample_analytical_queries(),
+        "semantic_queries": {
+            "Find Profiles": [
+                "Show me salinity profiles near the equator in March 2024",
+                "Find warm surface water in the Bay of Bengal",
+                "Which floats measured low oxygen in the Arabian Sea?",
+                "Deep profiles in the Southern Indian Ocean in February",
+            ],
         },
         "query_tips": {
             "analytical": "Use words like 'average', 'compare', 'count', 'trend' for statistical analysis",
-            "semantic": "Ask descriptive questions about specific measurements or oceanographic concepts",
-            "multi_dataset": "Future: Compare different platforms using 'compare X with Y' or 'validate X against Y'"
-        }
+            "semantic": "Ask descriptive questions; mention a region or month to narrow the search",
+        },
     }
+
 
 @app.get("/extensibility/status")
 async def get_extensibility_status():
-    """Get current extensibility status and future dataset support"""
-    
+    """Current dataset support and planned extensions"""
     return {
         "current_status": "Extensibility Framework Ready",
         "supported_datasets": {
             "implemented": ["ARGO Floats"],
-            "framework_ready": ["Gliders", "Buoys", "Satellites", "Custom Datasets"]
+            "framework_ready": ["Gliders", "Buoys", "Satellites", "Custom Datasets"],
         },
-        "capabilities": {
-            "unified_schema": "Ready for multi-dataset storage",
-            "cross_platform_queries": "NL-to-SQL supports multi-dataset analysis", 
-            "visualization_framework": "Adaptable to different data types",
-            "export_system": "Supports multiple formats for any dataset"
-        },
-        "integration_points": {
-            "data_ingestion": "Pluggable processor architecture",
-            "query_system": "Template-based extensibility",
-            "visualization": "Configurable chart types per dataset",
-            "metadata": "Unified platform and observation tables"
-        },
-        "next_steps": [
-            "Implement glider data processor",
-            "Add satellite data ingestion",
-            "Create buoy data handlers", 
-            "Develop cross-platform validation queries"
-        ]
     }
-
-@app.get("/nl-sql/test")
-async def test_nl_sql_system():
-    """Test endpoint for NL-to-SQL system validation"""
-    try:
-        from nl_to_sql import NLToSQLTranslator
-        
-        translator = NLToSQLTranslator()
-        
-        # Test a simple query
-        query = "What is the average temperature at different depths?"
-        intent = translator.detect_query_intent(query)
-        
-        if intent in translator.query_templates:
-            sql = translator.query_templates[intent]
-            
-            # Test SQL execution
-            result_df, status = translator.execute_sql_query(sql)
-            
-            return {
-                "status": "success",
-                "intent": intent,
-                "sql_preview": sql[:200] + "...",
-                "result_rows": len(result_df),
-                "execution_status": status,
-                "system_ready": True
-            }
-        else:
-            return {
-                "status": "no_template",
-                "intent": intent,
-                "system_ready": False
-            }
-        
-    except Exception as e:
-        return {
-            "status": "error",
-            "error": str(e),
-            "system_ready": False
-        }
-
-@app.post("/query-simple")
-async def simple_query(request: QueryRequest):
-    """Simplified query endpoint for testing"""
-    try:
-        from nl_to_sql import NLToSQLTranslator
-        
-        translator = NLToSQLTranslator()
-        
-        # Check if analytical
-        if translator.is_analytical_query(request.query_text):
-            intent = translator.detect_query_intent(request.query_text)
-            
-            if intent in translator.query_templates:
-                sql = translator.query_templates[intent]
-                result_df, status = translator.execute_sql_query(sql)
-                
-                return {
-                    "answer": f"Executed SQL query with {len(result_df)} results",
-                    "context_documents": [f"SQL: {sql[:100]}..."],
-                    "retrieved_metadata": [{"query_type": "analytical", "intent": intent}],
-                    "sql_results": result_df.head(10).to_dict('records') if not result_df.empty else []
-                }
-        
-        # Fall back to semantic search
-        return await semantic_search_query(request.query_text)
-        
-    except Exception as e:
-        return {
-            "answer": f"Error: {str(e)}",
-            "context_documents": [],
-            "retrieved_metadata": []
-        }

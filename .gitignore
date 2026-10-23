@@ -11,6 +11,7 @@ __pycache__/
 .Python
 env/
 venv/
+.venv/
 ENV/
 build/
 develop-eggs/
@@ -47,7 +48,7 @@ htmlcov/
 Thumbs.db
 
 # Streamlit
-.streamlit/
+.streamlit/secrets.toml
 .streamlit_cache/
 
 # Data
@@ -64,3 +65,6 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Local tooling
+.claude/

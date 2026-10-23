@@ -1,811 +1,311 @@
-# 🌊 ARGO Float Dashboard - Advanced Oceanographic Data Visualization Platform
+# 🌊 FloatChat: talk to the ocean
 
-[![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://python.org)
-[![Streamlit](https://img.shields.io/badge/Streamlit-1.28%2B-red.svg)](https://streamlit.io)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-13%2B-blue.svg)](https://postgresql.org)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+**Ask questions about real ocean data in plain English, and get answers with maps and charts.**
 
-> **A comprehensive, AI-powered dashboard for analyzing and visualizing ARGO float oceanographic data with advanced natural language querying capabilities.**
+![FloatChat overview](docs/screenshots/overview.png)
 
-*[📸 INSERT MAIN DASHBOARD SCREENSHOT HERE]*
-
-## 🎯 Project Overview
-
-The ARGO Float Dashboard is a state-of-the-art web application designed for oceanographers, marine scientists, and researchers to interact with ARGO float data through an intuitive interface. It combines advanced data visualization, AI-powered natural language processing, and comprehensive analytical tools to make oceanographic data exploration accessible and powerful.
-
-### 🌟 Key Highlights
-
-• **AI-Powered Chat Interface** - Query oceanographic data using natural language
-• **Real-time Data Visualization** - Interactive maps, profiles, and statistical charts
-• **Advanced Performance Optimization** - Handles large datasets with intelligent sampling
-• **Comprehensive Export Capabilities** - Multiple formats for data and visualizations
-• **Government-Grade Security** - Environment-based configuration and secure data handling
-• **Extensible Architecture** - Modular design for easy feature additions
-
-*[📸 INSERT FEATURE OVERVIEW COLLAGE HERE]*
+**Contents:** [What FloatChat is](#-what-floatchat-is) · [How it's built](#-how-its-built) ·
+[Run it on your machine](#-run-it-on-your-machine) · [Using it](#-using-floatchat) ·
+[Limitations & roadmap](#-limitations--roadmap)
 
 ---
 
-## 🚀 Core Features
+## 🌍 What FloatChat is
 
-### 💬 Intelligent Chat Interface
-• **Natural Language Queries** - Ask questions like "Show me salinity profiles near the equator in March 2023"
-• **AI-Powered Responses** - Contextual answers using LLM integration with RAG pipeline
-• **Real-time Visualizations** - Automatic chart generation based on query results
-• **Query History** - Track and revisit previous conversations
-• **Smart Suggestions** - Guided query examples for different analysis types
+### The ocean has sensors everywhere, and almost nobody can use the data
 
-*[📸 INSERT CHAT INTERFACE SCREENSHOT HERE]*
+[Argo](https://argo.ucsd.edu) is an international program that keeps about **4,000 robotic floats** drifting in
+the world's oceans. Each float parks about 1,000 m deep. Every ~10 days it dives to 2,000 m, then rises to the
+surface measuring **temperature, salinity** and, on biogeochemical (BGC) floats, **dissolved oxygen** and other
+chemistry. At the surface it sends this **profile** home by satellite. Argo data feed climate research, monsoon and
+cyclone forecasting, fisheries and ocean models, and the data are free for anyone to use.
 
-### 🗺️ Interactive Mapping System
-• **Dynamic Float Locations** - Real-time positioning of ARGO floats worldwide
-• **Trajectory Visualization** - Historical float movement patterns with temporal coloring
-• **Geographic Filtering** - Region-based data selection and analysis
-• **Clustering Support** - Intelligent grouping of nearby floats for better visualization
-• **Multi-layer Support** - Overlay different oceanographic parameters
+The catch is that using the data takes specialist skills. It comes as NetCDF files from data servers, organised by
+float and cycle, with quality flags and pressure coordinates. To answer something simple, like *"how much colder is
+the Bay of Bengal at 500 m than at the surface?"* or *"where is the oxygen minimum zone in the Arabian Sea?"*, you
+need to know which files to download, how to read them, and how to write the analysis code.
 
-*[📸 INSERT INTERACTIVE MAP SCREENSHOT HERE]*
+### Why we're building FloatChat
 
-### 📊 Advanced Profile Analysis
-• **Temperature-Salinity Diagrams** - Classical T-S plots with water mass identification
-• **Depth Profile Visualization** - Vertical distribution of oceanographic parameters
-• **Multi-Profile Comparison** - Side-by-side analysis of different floats or time periods
-• **BGC Parameter Analysis** - Biogeochemical data visualization (oxygen, pH, chlorophyll)
-• **Statistical Overlays** - Mean, median, and percentile calculations
+FloatChat removes that barrier. You type a question as you'd ask a colleague, and FloatChat:
 
-*[📸 INSERT PROFILE ANALYSIS SCREENSHOT HERE]*
+1. works out what kind of question it is,
+2. finds the right data, either by **writing SQL** for statistical questions or by **searching** thousands of
+   profiles for descriptive ones,
+3. answers in words, optionally explained by a large language model (LLM), and
+4. draws the **maps, depth profiles and charts** that go with the answer, with the data ready to download.
 
-### 📈 Comprehensive Statistics Dashboard
-• **System Overview** - Real-time metrics of data availability and quality
-• **Data Quality Assessment** - Automated quality control and flagging
-• **Temporal Analysis** - Time series trends and seasonal patterns
-• **Spatial Coverage** - Geographic distribution analysis
-• **Performance Metrics** - System health and response time monitoring
+It's built for students, researchers, educators and curious people who want to explore the ocean without first
+becoming data engineers.
 
-*[📸 INSERT STATISTICS DASHBOARD SCREENSHOT HERE]*
+### What happens when you ask a question
 
-### 🔧 Advanced Data Management
-• **Intelligent Filtering** - Multi-parameter data selection with real-time preview
-• **Smart Sampling** - Performance-optimized data reduction while preserving accuracy
-• **Batch Processing** - Efficient handling of large dataset operations
-• **Data Validation** - Automated quality checks and error detection
-• **Cache Management** - Optimized data storage for faster access
+| You ask… | FloatChat… |
+|---|---|
+| *"What is the average temperature at different depths?"* | spots a statistical question → runs SQL on PostgreSQL → answers with a temperature/salinity vs depth chart and the SQL it used |
+| *"Show me salinity profiles near the equator in March 2024"* | spots a descriptive question → reads "equator" and "March 2024" as filters → searches its vector index of profile descriptions → shows the matching profiles on a map and plots them |
+| *"Which floats measured low oxygen in the Arabian Sea?"* | limits the search to oxygen-measuring floats in the Arabian Sea → lists them with their oxygen minimum and depth |
 
-### 📥 Export & Reporting System
-• **Multiple Format Support** - PNG, PDF, SVG for visualizations; CSV, NetCDF, ASCII for data
-• **Automated Reports** - Generated summaries with metadata and analysis
-• **Batch Export** - Multiple datasets and visualizations in single operation
-• **Custom Templates** - Configurable report layouts for different use cases
-• **Metadata Preservation** - Complete provenance and quality information
+| Statistical question → SQL + chart | Descriptive question → search + map & profiles |
+|---|---|
+| ![SQL answer](docs/screenshots/chat-sql.png) | ![RAG answer](docs/screenshots/chat-rag.png) |
 
-*[📸 INSERT EXPORT INTERFACE SCREENSHOT HERE]*
+### The data in this demo
+
+The repo ships with **real Argo observations** from the **Indian Ocean, January–March 2024**, downloaded from the
+[Ifremer ERDDAP](https://erddap.ifremer.fr/erddap/) server:
+
+- **438 floats**, **3,891 profiles**, **88,541 measurements** from the surface down to 2,000 m
+- **61 BGC floats** with dissolved-oxygen data, which show the Arabian Sea's oxygen minimum zone clearly
+- Each profile is labelled with a region: Arabian Sea, Bay of Bengal, Equatorial, Southern and Eastern Indian Ocean,
+  Red Sea & Gulf of Aden
+
+You can download a different period or ocean region with one command (see [Using other data](#using-other-data)).
 
 ---
 
-## 🏗️ Technical Architecture
+## 🏗️ How it's built
 
-### 🧠 AI & Machine Learning Stack
-• **Large Language Models** - Ollama integration with Phi3, Qwen2.5 models
-• **Vector Database** - ChromaDB for semantic search and context retrieval
-• **RAG Pipeline** - Retrieval-Augmented Generation for accurate responses
-• **Embedding Models** - Nomic-embed-text for semantic understanding
-• **Intelligent Fallbacks** - Graceful degradation when AI services are unavailable
+```
+                       ┌────────────────────────── backend (FastAPI, main.py) ───────────────────────────┐
+ ┌─────────────┐  HTTP │                                                                                 │
+ │  Streamlit  │ ────► │  POST /query ─► is it statistical?                                              │
+ │  frontend   │       │                  ├─ yes ─► nl_to_sql.py: template or LLM-written SQL ─► PostgreSQL
+ │  (app.py)   │ ◄──── │                  └─ no ──► ChromaDB vector search (+ region/month/oxygen filters)│
+ └─────────────┘  JSON │                              └─► llm.py: LLM writes the answer from the matches │
+                       │  /stats /floats /get_profiles /export … ─────────────────────────► PostgreSQL   │
+                       └─────────────────────────────────────────────────────────────────────────────────┘
+                                ▲
+     scripts/fetch_argo_data.py ─► data/argo_profiles.csv.gz ─► ingest.py ─► PostgreSQL + ChromaDB
+```
 
-### 💾 Data Infrastructure
-• **PostgreSQL Database** - Robust storage for oceanographic measurements
-• **ChromaDB Vector Store** - Semantic search and document retrieval
-• **NetCDF Support** - Native handling of oceanographic data formats
-• **Real-time Processing** - Live data ingestion and processing capabilities
-• **Data Validation** - Comprehensive quality control and error handling
+### 1. Data pipeline: getting the ocean data in
 
-### 🎨 Frontend Technology
-• **Streamlit Framework** - Modern, responsive web interface
-• **Plotly Visualizations** - Interactive, publication-quality charts
-• **Government Theme** - Professional styling with accessibility compliance
-• **Responsive Design** - Optimized for desktop and tablet viewing
-• **Progressive Loading** - Efficient handling of large datasets
+| Component | What it does |
+|---|---|
+| `scripts/fetch_argo_data.py` | Downloads Argo profiles for a date range and region from ERDDAP, in 5-day chunks. Core floats provide temperature and salinity; the BGC dataset adds dissolved oxygen. Each profile is interpolated onto 24 standard pressure levels (5–2,000 dbar) so the dataset stays small. The result is saved as `data/argo_profiles.csv.gz`. |
+| `data/argo_profiles.csv.gz` | The bundled seed dataset (0.9 MB). Nothing extra needs downloading. |
+| `ingest.py` | Turns the seed file into a database. It creates the PostgreSQL tables, writes one sentence-style description per profile (*"Float 2902203, cycle 45, 11 Feb 2024, 12.3°N 65.2°E in the Arabian Sea, surface 28.1 °C…"*), embeds those descriptions and stores them in ChromaDB. `--if-empty` skips everything if the data is already loaded. |
+| `data/profile_embeddings.npz` | Precomputed embeddings for the bundled profiles. Embedding about 4,000 descriptions on a CPU takes ~5 minutes; with this cache a fresh install is ready in ~30 seconds. Profiles whose descriptions change are re-embedded automatically. |
+| `ocean_regions.py` | Defines the named regions. It labels each profile with its region, and spots region names, months, years and oxygen terms in your questions so they can be used as search filters. |
 
-### ⚡ Performance Optimization
-• **Multi-level Caching** - Session, memory, and disk-based caching
-• **Intelligent Sampling** - 7 different sampling strategies for large datasets
-• **WebGL Acceleration** - Hardware-accelerated rendering for large point datasets
-• **Lazy Loading** - On-demand component and data loading
-• **Connection Pooling** - Optimized database connections
+### 2. Storage
+
+- **PostgreSQL** holds the numbers, in three tables:
+  - `floats`: one row per float (WMO ID, first/last position and date)
+  - `profiles`: one row per dive cycle (float, cycle number, date, position, region, number of levels)
+  - `measurements`: one row per depth level (pressure/depth, temperature, salinity, oxygen)
+- **ChromaDB** holds the vector index: one embedded text description per profile, plus metadata (float, date, month,
+  region, position, whether it measures oxygen) used for filtering.
+
+### 3. Backend: the FastAPI service (`main.py`)
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /query` | The main endpoint. It takes a question and returns the answer text, the query type (`analytical` or `semantic`), the SQL rows or matching profiles, and the context used. |
+| `GET /stats` | Dataset totals, date range and profiles per region (the overview tiles). |
+| `GET /floats` | Each float's latest position and surface readings (the overview map). |
+| `POST /get_profiles` | All depth levels for the requested profiles (the profile plots). |
+| `GET /profiles/float/{id}`, `GET /float/{id}` | One float's trajectory and summary (the float explorer). |
+| `POST /export` | Profiles as CSV, NetCDF or ASCII. |
+| `GET /health` | Status of the database, vector index and LLM. |
+
+Interactive API docs are at `http://localhost:8000/docs` while the backend is running.
+
+Supporting modules:
+
+| Component | What it does |
+|---|---|
+| `nl_to_sql.py` | Decides whether a question is statistical, and which kind (by depth, by region, by depth layer, monthly trend, per float, oxygen). Known kinds run hand-written SQL templates. Other statistical questions go to the LLM, which writes the SQL. Before anything runs, the SQL is checked to be a single read-only `SELECT`. |
+| `llm.py` | A small client for any **OpenAI-compatible** chat API: Groq, OpenAI, Ollama, LM Studio, vLLM and others. When no LLM is configured, or the call fails, FloatChat falls back to answers built directly from the data, so the app still works. |
+| `export_utils.py` | Builds the CSV, NetCDF (CF-style attributes) and ASCII exports. |
+| `config.py` | Reads all settings from environment variables / `.env`. |
+
+### 4. Frontend: the Streamlit app (`app.py`)
+
+- **Overview page:** headline numbers, a live map of every float coloured by surface temperature, profiles per
+  region, and a **float explorer**. Click any float on the map to see its trajectory and latest depth profiles.
+- **Ask FloatChat page:** a chat with suggestion cards. Each answer comes with:
+  - a badge showing how it was answered (SQL or profile search) and how long it took
+  - a chart, or a map plus temperature/salinity/oxygen profiles
+  - the data table and SQL
+  - download buttons
+- The sidebar shows whether the database, vector index and LLM are connected.
+
+### 5. Packaging & deployment
+
+| Component | What it does |
+|---|---|
+| `Dockerfile` | One image for backend and frontend, with the embedding model pre-downloaded. |
+| `docker-compose.yml` | Runs PostgreSQL, the backend (which loads the data on first start) and the frontend. |
+| `render.yaml` | Blueprint for deploying to [Render](https://render.com). |
+| `.env.example` | Every setting, with examples for Groq, Ollama, LM Studio and OpenAI. |
+| `tests/test_floatchat_core.py` | Tests for region parsing, question routing and the SQL safety check. |
+
+### Repository layout
+
+```
+FloatChat-AI/
+├── app.py                  # Streamlit frontend (the demo)
+├── main.py                 # FastAPI backend
+├── nl_to_sql.py            # question routing + SQL templates + SQL safety
+├── llm.py                  # OpenAI-compatible LLM client (Groq, Ollama, …)
+├── ingest.py               # loads data into PostgreSQL + ChromaDB
+├── ocean_regions.py        # region labels + question filters
+├── export_utils.py         # CSV / NetCDF / ASCII export
+├── config.py               # settings from .env
+├── scripts/fetch_argo_data.py
+├── data/                   # bundled Argo data + embedding cache
+├── docs/screenshots/
+├── tests/
+├── Dockerfile, docker-compose.yml, render.yaml, requirements.txt, .env.example
+├── streamlit_app.py, components/, styles/, utils/   # experimental dashboard (WIP, see README_DASHBOARD.md)
+└── legacy/                 # early prototype scripts, kept for reference
+```
 
 ---
 
-## 🛠️ Installation & Setup
+## 🚀 Run it on your machine
 
-### 📋 Prerequisites
-• **Python 3.8+** - Core runtime environment
-• **PostgreSQL 13+** - Database server for oceanographic data
-• **Ollama** - Local LLM server for AI functionality
-• **Git** - Version control system
-• **4GB+ RAM** - Recommended for optimal performance
+### What you need
 
-### ⚡ Quick Start (5 Minutes)
+- **[Docker Desktop](https://www.docker.com/products/docker-desktop/)**, installed and running
+- **git**
+- *(optional)* a free **[Groq API key](https://console.groq.com/keys)**, so the AI can write explanations
 
-1. **Clone Repository**
-   ```bash
-   git clone https://github.com/your-username/argo-float-dashboard.git
-   cd argo-float-dashboard
-   ```
+You don't need to download any data, models or databases by hand; Docker fetches everything. The app uses ports
+**8501** (app), **8000** (API) and **5433** (database).
 
-2. **Run Automated Setup**
-   ```bash
-   python setup.py
-   ```
+### Option A: Docker (recommended)
 
-3. **Configure Environment**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your database credentials and settings
-   ```
+**1. Clone the repository**
 
-4. **Validate Configuration**
-   ```bash
-   python validate_config.py
-   ```
-
-5. **Launch Dashboard**
-   ```bash
-   streamlit run streamlit_app.py
-   ```
-
-*[📸 INSERT INSTALLATION PROCESS SCREENSHOTS HERE]*
-
-### � Detailed Installation
-
-#### Step 1: Environment Setup
 ```bash
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+git clone https://github.com/CodexManvik/FloatChat-AI.git
+```
 
-# Install dependencies
+```bash
+cd FloatChat-AI
+```
+
+**2. Create your settings file**
+
+```bash
+cp .env.example .env
+```
+
+(On Windows Command Prompt use `copy .env.example .env`.) To use Groq, open `.env` and paste your key:
+
+```env
+LLM_BASE_URL=https://api.groq.com/openai/v1
+LLM_MODEL=llama-3.3-70b-versatile
+LLM_API_KEY=gsk_your_key_here
+```
+
+You can skip the key: FloatChat still answers every question, just without written explanations. If Groq has
+retired that model, choose any chat model listed in the Groq console.
+
+**3. Start everything**
+
+```bash
+docker compose up --build
+```
+
+The first run takes a few minutes while Docker downloads Python packages and builds the image. The backend then
+loads the data in about 30 seconds. You're ready when the log shows `Uvicorn running on http://0.0.0.0:8000`.
+
+**4. Open the app**
+
+- App: **http://localhost:8501**
+- API docs: http://localhost:8000/docs
+
+The sidebar should show green dots for PostgreSQL and the vector index. The LLM dot is green if your key works and
+amber if no LLM is configured.
+
+**Stopping and restarting**
+
+- `Ctrl+C`, or `docker compose down` stops everything; your data is kept.
+- `docker compose up` starts again in seconds.
+- After editing `.env`, run `docker compose up -d backend` to apply the change.
+- `docker compose down -v` wipes the database; it is reloaded on the next start.
+
+### Option B: without Docker (for development)
+
+You need Python 3.11+ and PostgreSQL. The easiest way to get PostgreSQL is `docker compose up -d db`, which listens
+on port 5433 and matches the default `DATABASE_URL`.
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate             # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env               # add your LLM key, or point DATABASE_URL at your own PostgreSQL
+
+python ingest.py                   # load data into PostgreSQL + build the vector index (~30 s)
+uvicorn main:app --port 8000       # terminal 1: backend
+streamlit run app.py               # terminal 2: frontend → http://localhost:8501
 ```
 
-#### Step 2: Database Configuration
-```bash
-# Install PostgreSQL (if not already installed)
-# Ubuntu/Debian: sudo apt install postgresql postgresql-contrib
-# macOS: brew install postgresql
-# Windows: Download from postgresql.org
+Run the tests with `python -m pytest tests/test_floatchat_core.py`.
 
-# Create database and user
-sudo -u postgres createdb argo
-sudo -u postgres createuser --interactive dashboard_user
-```
+### Troubleshooting
 
-#### Step 3: Ollama Setup
-```bash
-# Install Ollama from https://ollama.ai/download
-# Pull required models
-ollama pull phi3:mini
-ollama pull nomic-embed-text:latest
-ollama pull qwen2.5:3b
-```
-
-#### Step 4: Data Ingestion
-```bash
-# Prepare your ARGO data (NetCDF format)
-# Place data files in project directory
-
-# Ingest data to PostgreSQL
-python data_postgresql.py
-
-# Create vector embeddings
-python data_chroma_floats.py
-```
+| Problem | Fix |
+|---|---|
+| `port is already allocated` | Something else is using 8501, 8000 or 5433. Stop it, or change the left-hand port in `docker-compose.yml`. |
+| App says it can't reach the API | The backend is still loading data; wait for `Uvicorn running…` in the logs (`docker compose logs -f backend`). |
+| LLM dot is red: *missing or invalid LLM_API_KEY* | Check the key in `.env`, then run `docker compose up -d backend`. |
+| LLM dot is red: *cannot connect* | Check `LLM_BASE_URL`. If you use Ollama on your own machine while the app runs in Docker, use `http://host.docker.internal:11434/v1`. |
+| You want a clean start | `docker compose down -v`, then `docker compose up --build`. |
 
 ---
 
-## 📊 Data Ingestion Guide
+## 💬 Using FloatChat
 
-### 🌊 ARGO Data Sources
+Questions to try:
 
-#### Supported Data Formats
-• **NetCDF Files** - Standard oceanographic format (.nc)
-• **CSV Files** - Tabular data with proper column mapping
-• **Direct Database** - PostgreSQL import from existing databases
-• **API Integration** - Real-time data feeds from ARGO data centers
+- What is the average temperature at different depths?
+- Compare surface temperature across ocean regions
+- Show average salinity by depth range
+- Show me salinity profiles near the equator in March 2024
+- Which floats measured low oxygen in the Arabian Sea?
+- Average dissolved oxygen by ocean zone
+- Show the monthly temperature trend
+- Show a summary for each float
 
-#### Required Data Fields
-• **Core Parameters**
-  - `float_id` - Unique float identifier
-  - `profile_id` - Profile cycle number
-  - `time` - Measurement timestamp
-  - `latitude` - Geographic latitude
-  - `longitude` - Geographic longitude
-  - `depth` - Measurement depth (meters)
+Tips:
 
-• **Physical Parameters**
-  - `temperature` - Water temperature (°C)
-  - `salinity` - Practical salinity (PSU)
-  - `pressure` - Water pressure (dbar)
+- Words like *average, compare, trend, count, summary* trigger the SQL path. Descriptive questions search the
+  profiles; naming a region, month or "oxygen" narrows the search.
+- **Demo links:** `http://localhost:8501/?q=Average%20dissolved%20oxygen%20by%20ocean%20zone` opens the chat with that
+  question already asked. They're handy in presentations.
+- The **Data & export** tab under an answer downloads its profiles as CSV, NetCDF or ASCII.
 
-• **Biogeochemical Parameters** (Optional)
-  - `oxygen` - Dissolved oxygen (μmol/kg)
-  - `ph` - pH levels
-  - `chlorophyll` - Chlorophyll-a concentration
-  - `nitrate` - Nitrate concentration
-  - `backscatter` - Optical backscatter
+### Using other data
 
-### 📥 Data Ingestion Process
-
-#### Method 1: NetCDF Files
 ```bash
-# Place NetCDF files in project directory
-# Example: tempsal.nc, bgc_data.nc
-
-# Configure data paths in config
-export NETCDF_DATA_PATH="./data/"
-
-# Run ingestion script
-python data_postgresql.py
+python scripts/fetch_argo_data.py --start 2024-06-01 --end 2024-09-01 --bbox=-40,30,30,120
+python ingest.py
 ```
 
-#### Method 2: CSV Import
-```bash
-# Prepare CSV with required columns
-# Ensure proper date formatting (ISO 8601)
-
-# Import to database
-python scripts/import_csv.py --file your_data.csv
-```
-
-#### Method 3: Direct Database Connection
-```bash
-# Configure source database in .env
-SOURCE_DATABASE_URL=postgresql://user:pass@source:5432/argo_source
-
-# Run migration script
-python scripts/migrate_data.py
-```
-
-### 🔍 Data Quality Control
-
-#### Automated Validation
-• **Range Checks** - Validate parameter values within expected ranges
-• **Temporal Consistency** - Check for logical time sequences
-• **Geographic Validation** - Verify coordinates within valid ranges
-• **Duplicate Detection** - Identify and handle duplicate measurements
-• **Missing Data Analysis** - Assess data completeness
-
-#### Quality Flags
-• **Good Data** (QC=1) - Passed all quality checks
-• **Probably Good** (QC=2) - Minor issues, usable for most analyses
-• **Bad Data** (QC=4) - Failed quality checks, excluded from analysis
-• **Missing Data** (QC=9) - No measurement available
+`--bbox` is `lat_min,lat_max,lon_min,lon_max`. New data needs new embeddings, which takes a few minutes on a CPU;
+after that the cache is updated. If you fetch another ocean basin, update the region boxes in `ocean_regions.py`.
 
 ---
 
-## 🎮 Usage Guide
-
-### 💬 Using the Chat Interface
-
-#### Basic Queries
-• **Location-based**: "Show me ARGO floats in the Arabian Sea"
-• **Parameter-specific**: "What are the temperature profiles near the equator?"
-• **Temporal**: "Find salinity measurements from March 2023"
-• **Comparative**: "Compare BGC parameters in different ocean regions"
-
-#### Advanced Query Examples
-```
-• "Show me salinity profiles near the equator in March 2023"
-• "Compare BGC parameters in the Arabian Sea for the last 6 months"
-• "What are the nearest ARGO floats to coordinates 15°N, 75°E?"
-• "Find temperature anomalies in the Indian Ocean during monsoon season"
-• "Show oxygen minimum zone characteristics in the Arabian Sea"
-```
-
-*[📸 INSERT CHAT QUERY EXAMPLES SCREENSHOTS HERE]*
-
-### 🗺️ Interactive Map Navigation
-
-#### Basic Operations
-• **Pan & Zoom** - Mouse/touch navigation
-• **Float Selection** - Click markers for detailed information
-• **Region Drawing** - Select custom geographic areas
-• **Layer Toggle** - Show/hide different data layers
-• **Time Animation** - Visualize temporal changes
-
-#### Advanced Features
-• **Clustering Control** - Adjust marker grouping sensitivity
-• **Trajectory Display** - Show float movement paths
-• **Parameter Overlay** - Color-code by temperature, salinity, etc.
-• **Bathymetry Integration** - Ocean depth background layers
-• **Current Overlays** - Ocean current visualization
-
-### 📊 Profile Analysis Workflow
-
-#### Single Profile Analysis
-1. **Select Float** - Choose from map or search
-2. **Choose Parameters** - Temperature, salinity, BGC
-3. **Set Depth Range** - Focus on specific ocean layers
-4. **Apply Filters** - Quality flags, time periods
-5. **Generate Plots** - Automatic visualization creation
-
-#### Multi-Profile Comparison
-1. **Select Multiple Floats** - Geographic or temporal selection
-2. **Align Profiles** - Depth or density coordinates
-3. **Statistical Analysis** - Mean, median, percentiles
-4. **Overlay Plots** - Comparative visualization
-5. **Export Results** - Data and visualizations
-
-*[📸 INSERT PROFILE ANALYSIS WORKFLOW SCREENSHOTS HERE]*
-
----
-
-## ⚙️ Configuration Reference
-
-### 🔐 Environment Variables
-
-#### Database Configuration
-```env
-DB_HOST=localhost                    # PostgreSQL server host
-DB_PORT=5432                        # Database port
-DB_NAME=argo                        # Database name
-DB_USER=postgres                    # Database username
-DB_PASSWORD=your_secure_password    # Database password
-DATABASE_URL=postgresql+psycopg2://postgres:password@localhost:5432/argo
-```
-
-#### AI & LLM Settings
-```env
-OLLAMA_HOST=http://localhost:11434  # Ollama server URL
-LLM_MODEL=phi3:mini                 # Primary language model
-EMBEDDING_MODEL=nomic-embed-text:latest  # Text embedding model
-LLM_TEMPERATURE=0.3                 # Response creativity (0.0-1.0)
-LLM_TIMEOUT=60                      # Request timeout (seconds)
-```
-
-#### Performance Tuning
-```env
-CACHE_TTL=3600                      # Cache lifetime (seconds)
-MAX_EXPORT_SIZE=100000              # Maximum export records
-PAGINATION_SIZE=1000                # Page size for large datasets
-DEFAULT_SAMPLE_SIZE=1000            # Default sampling size
-MAX_SAMPLE_SIZE=10000               # Maximum sampling size
-```
-
-#### Visualization Settings
-```env
-DEFAULT_COLORSCALE=viridis          # Default color scheme
-TEMPERATURE_COLORSCALE=RdYlBu_r     # Temperature visualization colors
-SALINITY_COLORSCALE=Blues           # Salinity visualization colors
-CHART_HEIGHT=600                    # Default chart height (pixels)
-CHART_WIDTH=800                     # Default chart width (pixels)
-```
-
-### 🎛️ Feature Flags
-```env
-ENABLE_CHAT=true                    # Enable AI chat interface
-ENABLE_EXPORT=true                  # Enable data export features
-ENABLE_STATISTICS=true              # Enable statistics dashboard
-ENABLE_ADVANCED_FILTERS=true        # Enable advanced filtering
-ENABLE_REAL_TIME_UPDATES=false      # Enable live data updates
-```
-
----
-
-## 🧪 Testing & Validation
-
-### 🔍 Configuration Validation
-```bash
-# Comprehensive system check
-python validate_config.py
-
-# Check specific components
-python -c "import config; print('Config OK')"
-python -c "from components.llm_interface import LLMInterface; print('LLM OK')"
-```
-
-### 🧪 Unit Testing
-```bash
-# Run all tests
-python -m pytest tests/ -v
-
-# Run specific test categories
-python -m pytest tests/test_chat_interface.py -v
-python -m pytest tests/test_data_sampler.py -v
-python -m pytest tests/test_performance_optimizer.py -v
-```
-
-### 📊 Performance Testing
-```bash
-# Test with large datasets
-python test_performance.py --size 100000
-
-# Memory usage analysis
-python -m memory_profiler streamlit_app.py
-
-# Load testing
-python test_load.py --concurrent 10 --duration 60
-```
-
-*[📸 INSERT TESTING RESULTS SCREENSHOTS HERE]*
-
----
-
-## 🚀 Deployment Options
-
-### 🐳 Docker Deployment
-
-#### Quick Docker Setup
-```bash
-# Build image
-docker build -t argo-dashboard .
-
-# Run container
-docker run -p 8501:8501 --env-file .env argo-dashboard
-```
-
-#### Docker Compose (Recommended)
-```yaml
-version: '3.8'
-services:
-  dashboard:
-    build: .
-    ports:
-      - "8501:8501"
-    environment:
-      - DATABASE_URL=postgresql://postgres:password@db:5432/argo
-    depends_on:
-      - db
-      - ollama
-  
-  db:
-    image: postgres:15
-    environment:
-      POSTGRES_DB: argo
-      POSTGRES_PASSWORD: password
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-  
-  ollama:
-    image: ollama/ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-```
-
-### ☁️ Cloud Deployment
-
-#### AWS Deployment
-• **EC2 Instance** - t3.large or larger recommended
-• **RDS PostgreSQL** - Managed database service
-• **Application Load Balancer** - For high availability
-• **CloudWatch** - Monitoring and logging
-• **S3** - Static asset storage
-
-#### Azure Deployment
-• **App Service** - Managed web application hosting
-• **Azure Database for PostgreSQL** - Managed database
-• **Application Insights** - Performance monitoring
-• **Blob Storage** - File storage for exports
-
-#### Google Cloud Deployment
-• **Cloud Run** - Serverless container deployment
-• **Cloud SQL** - Managed PostgreSQL
-• **Cloud Storage** - File storage
-• **Cloud Monitoring** - System monitoring
-
-### 🔒 Production Security
-
-#### Security Checklist
-• **Environment Variables** - All secrets in environment, not code
-• **Database Security** - Encrypted connections, limited user permissions
-• **HTTPS Enforcement** - SSL/TLS for all connections
-• **Access Control** - Authentication and authorization
-• **Regular Updates** - Keep dependencies current
-• **Backup Strategy** - Automated database and configuration backups
-
----
-
-## 📈 Performance Optimization
-
-### ⚡ System Performance
-
-#### Database Optimization
-```sql
--- Essential indexes for performance
-CREATE INDEX idx_measurements_lat_lon ON measurements(lat, lon);
-CREATE INDEX idx_measurements_time ON measurements(time);
-CREATE INDEX idx_measurements_float_id ON measurements(float_id);
-CREATE INDEX idx_measurements_depth ON measurements(depth);
-```
-
-#### Caching Strategy
-• **Multi-level Caching** - Session, memory, and disk caching
-• **Intelligent Cache Keys** - Based on query parameters and data freshness
-• **Cache Warming** - Pre-populate frequently accessed data
-• **Cache Invalidation** - Smart expiration based on data updates
-
-#### Data Sampling
-• **Adaptive Sampling** - Automatically choose optimal sampling strategy
-• **Quality Preservation** - Maintain statistical properties while reducing size
-• **Extreme Value Retention** - Keep outliers for scientific accuracy
-• **Temporal Sampling** - Time-aware data reduction
-
-### 🎯 User Experience Optimization
-
-#### Loading Performance
-• **Progressive Loading** - Show data as it becomes available
-• **Skeleton Screens** - Visual placeholders during loading
-• **Lazy Loading** - Load components only when needed
-• **Optimistic Updates** - Show expected results immediately
-
-#### Visualization Performance
-• **WebGL Rendering** - Hardware acceleration for large datasets
-• **Level-of-Detail** - Reduce complexity at different zoom levels
-• **Data Decimation** - Smart point reduction for smooth interaction
-• **Viewport Culling** - Only render visible data points
-
----
-
-## 🤝 Contributing
-
-### 🛠️ Development Setup
-
-#### Local Development
-```bash
-# Clone repository
-git clone https://github.com/your-username/argo-float-dashboard.git
-cd argo-float-dashboard
-
-# Setup development environment
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
-
-# Setup pre-commit hooks
-pre-commit install
-```
-
-#### Code Standards
-• **Python Style** - Follow PEP 8 with Black formatting
-• **Type Hints** - Use type annotations for all functions
-• **Documentation** - Comprehensive docstrings and comments
-• **Testing** - Unit tests for all new features
-• **Security** - No hardcoded secrets or credentials
-
-### 📝 Contribution Guidelines
-
-#### Pull Request Process
-1. **Fork Repository** - Create personal fork
-2. **Create Branch** - Feature-specific branch naming
-3. **Implement Changes** - Follow coding standards
-4. **Add Tests** - Ensure adequate test coverage
-5. **Update Documentation** - Keep docs current
-6. **Submit PR** - Detailed description of changes
-
-#### Issue Reporting
-• **Bug Reports** - Include reproduction steps and environment details
-• **Feature Requests** - Describe use case and expected behavior
-• **Performance Issues** - Include profiling data and system specs
-• **Documentation** - Suggest improvements or corrections
-
----
-
-## 📚 API Reference
-
-### 🔌 Core APIs
-
-#### Data Query API
-```python
-from components.direct_data_loader import DirectDataLoader
-
-# Initialize data loader
-loader = DirectDataLoader()
-
-# Get float locations
-locations = loader.get_float_locations()
-
-# Get profile data
-profiles = loader.get_profile_data(float_id="ARGO_001", limit=1000)
-
-# Search data with natural language
-results = loader.search_data("temperature profiles near equator")
-```
-
-#### LLM Interface API
-```python
-from components.llm_interface import LLMInterface
-
-# Initialize LLM interface
-llm = LLMInterface()
-
-# Query with timeout
-response = llm.query_llm_with_timeout(
-    "Show me salinity profiles near the equator",
-    timeout=60
-)
-
-# Check availability
-is_available = llm.is_available()
-```
-
-#### Visualization API
-```python
-from components.map_visualization import InteractiveMap
-from components.profile_visualizer import ProfileVisualizer
-
-# Create map visualization
-map_viz = InteractiveMap()
-fig = map_viz.create_base_map()
-fig = map_viz.add_float_markers(fig, locations_data)
-
-# Create profile visualization
-profile_viz = ProfileVisualizer()
-fig = profile_viz.create_ts_profile(profile_data, float_id)
-```
-
----
-
-## 🆘 Troubleshooting
-
-### 🔧 Common Issues
-
-#### Database Connection Problems
-```bash
-# Check PostgreSQL status
-sudo systemctl status postgresql  # Linux
-brew services list | grep postgresql  # macOS
-
-# Test connection
-psql -h localhost -U postgres -d argo
-
-# Check firewall settings
-sudo ufw status  # Linux
-```
-
-#### Ollama Service Issues
-```bash
-# Check Ollama status
-ollama list
-
-# Restart Ollama service
-ollama serve
-
-# Pull missing models
-ollama pull phi3:mini
-ollama pull nomic-embed-text:latest
-```
-
-#### Performance Issues
-```bash
-# Check system resources
-htop  # Linux/macOS
-taskmgr  # Windows
-
-# Monitor database performance
-SELECT * FROM pg_stat_activity;  # PostgreSQL
-
-# Check cache utilization
-python -c "from components.performance_optimizer import PerformanceOptimizer; print(PerformanceOptimizer().get_cache_stats())"
-```
-
-#### Memory Issues
-```bash
-# Reduce sampling size
-export DEFAULT_SAMPLE_SIZE=500
-export MAX_SAMPLE_SIZE=5000
-
-# Clear cache
-python -c "from components.streamlit_cache import StreamlitCache; StreamlitCache().clear_all_caches()"
-
-# Restart application
-pkill -f streamlit
-streamlit run streamlit_app.py
-```
-
-### 📞 Support Resources
-
-#### Documentation
-• **Environment Setup** - `ENVIRONMENT_SETUP.md`
-• **API Documentation** - `/docs` endpoint when running
-• **Configuration Reference** - `.env.example`
-• **Troubleshooting Guide** - This section
-
-#### Community Support
-• **GitHub Issues** - Bug reports and feature requests
-• **Discussions** - Community Q&A and ideas
-• **Wiki** - Extended documentation and tutorials
-• **Examples** - Sample configurations and use cases
-
----
-
-## 📄 License & Citation
-
-### 📜 License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-### 📖 Citation
-If you use this dashboard in your research, please cite:
-
-```bibtex
-@software{argo_float_dashboard,
-  title={ARGO Float Dashboard: Advanced Oceanographic Data Visualization Platform},
-  author={Your Name},
-  year={2024},
-  url={https://github.com/your-username/argo-float-dashboard},
-  version={1.0.0}
-}
-```
-
-### 🙏 Acknowledgments
-• **ARGO Program** - For providing global oceanographic data
-• **Streamlit Team** - For the excellent web framework
-• **Plotly** - For interactive visualization capabilities
-• **Ollama** - For local LLM infrastructure
-• **PostgreSQL** - For robust data storage
-• **ChromaDB** - For vector search capabilities
-
----
-
-## 🔮 Roadmap & Future Features
-
-### 🎯 Version 2.0 (Planned)
-• **Real-time Data Streaming** - Live ARGO data integration
-• **Machine Learning Models** - Predictive oceanographic modeling
-• **Multi-user Support** - User authentication and personalization
-• **Advanced Analytics** - Statistical modeling and trend analysis
-• **Mobile Application** - Native iOS and Android apps
-
-### 🌟 Version 3.0 (Vision)
-• **Satellite Data Integration** - Multi-source oceanographic data
-• **3D Visualization** - Volumetric ocean data representation
-• **Collaborative Features** - Shared workspaces and annotations
-• **API Marketplace** - Third-party integrations and extensions
-• **Cloud-native Architecture** - Kubernetes deployment
-
----
-
-## 📊 Project Statistics
-
-*[📸 INSERT PROJECT STATISTICS DASHBOARD HERE]*
-
-### 📈 Current Metrics
-• **Lines of Code**: 15,000+
-• **Test Coverage**: 85%+
-• **Components**: 20+ modular components
-• **Supported Data Formats**: 4 (NetCDF, CSV, PostgreSQL, API)
-• **Visualization Types**: 10+ chart types
-• **Performance**: <2s response time for typical queries
-
-### 🏆 Achievements
-• **Government-Grade Security** - Environment-based configuration
-• **Production-Ready** - Comprehensive testing and validation
-• **Scalable Architecture** - Handles datasets with 100,000+ records
-• **AI-Powered** - Natural language query interface
-• **Open Source** - MIT license for community contribution
-
----
-
-## 🌊 Get Started Today!
-
-Ready to explore oceanographic data like never before? Follow these steps:
-
-1. **⚡ Quick Start**: Run `python setup.py` for automated installation
-2. **🔧 Configure**: Edit `.env` with your database credentials
-3. **✅ Validate**: Run `python validate_config.py` to check setup
-4. **🚀 Launch**: Execute `streamlit run streamlit_app.py`
-5. **🌊 Explore**: Start querying your ARGO data!
-
-*[📸 INSERT FINAL CALL-TO-ACTION SCREENSHOT HERE]*
-
----
-
-<div align="center">
-
-**🌊 Dive Deep into Ocean Data with ARGO Float Dashboard 🌊**
-
-[🚀 Get Started](#-installation--setup) • [📖 Documentation](#-usage-guide) • [🤝 Contribute](#-contributing) • [🆘 Support](#-troubleshooting)
-
-Made with ❤️ for the oceanographic community
-
-</div>
+## 🗺️ Limitations & roadmap
+
+- The data is a three-month Indian Ocean snapshot, not a live feed. Next step: scheduled ingestion of recent profiles.
+- Deciding between SQL and search uses keywords; an LLM-based router would understand more phrasings.
+- Region boundaries are approximate boxes.
+- Only temperature, salinity and oxygen are loaded. BGC floats also measure pH, chlorophyll and nitrate, which could
+  be added to `fetch_argo_data.py`.
+- `streamlit_app.py` and `components/` are an experimental, feature-heavy dashboard that still uses mock data in
+  places. They are not part of the demo (see `README_DASHBOARD.md`).
+- `legacy/` holds early prototype scripts that are no longer used.
+
+## 🙏 Acknowledgments
+
+These data were collected and made freely available by the International Argo Program and the national programs
+that contribute to it ([argo.ucsd.edu](https://argo.ucsd.edu), [ocean-ops.org](https://www.ocean-ops.org)). The
+Argo Program is part of the Global Ocean Observing System. Data were accessed through the
+[Ifremer ERDDAP](https://erddap.ifremer.fr/erddap/) server.

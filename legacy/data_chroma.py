@@ -12,8 +12,8 @@ ollama_ef = embedding_functions.OllamaEmbeddingFunction(
 client = chromadb.PersistentClient(path="./chroma_db")
 client.delete_collection(name="argo_measurements")
 collection = client.get_or_create_collection(name="argo_measurements",embedding_function=ollama_ef)
-password = quote_plus("Manvik@2005")
-engine = create_engine(f"postgresql+psycopg2://postgres:{password}@localhost:5432/argo")
+import config
+engine = create_engine(config.DATABASE_URL)
 
 sql_query = "SELECT * FROM measurements;"
 df_from_postgres = pd.read_sql_query(sql_query,engine)

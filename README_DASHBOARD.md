@@ -1,5 +1,7 @@
 # ARGO Float Dashboard - Streamlit Frontend
 
+> **Status: experimental / work in progress.** This dashboard still uses mock data in places. The main, working demo is `app.py`; see `readme.md`.
+
 A government-grade Streamlit dashboard for visualizing ARGO oceanographic data with interactive maps, profile analysis, and natural language querying capabilities.
 
 ## 🚀 Quick Start

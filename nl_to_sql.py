@@ -3,10 +3,10 @@ Production-Ready Natural Language to SQL Translation System
 Handles analytical queries for ARGO oceanographic data
 """
 
-import ollama
 from sqlalchemy import create_engine, text
 import pandas as pd
 import config
+import llm
 import re
 from typing import Dict, List, Tuple, Optional
 
@@ -73,17 +73,17 @@ class NLToSQLTranslator:
             
             'regional_comparison': """
                 SELECT 
-                    CASE 
-                        WHEN lat > 0 THEN 'Northern Hemisphere'
-                        ELSE 'Southern Hemisphere'
-                    END as region,
-                    AVG(temperature) as avg_temperature,
-                    AVG(salinity) as avg_salinity,
-                    AVG(oxygen) as avg_oxygen,
+                    p.region,
+                    AVG(m.temperature) as avg_temperature,
+                    AVG(m.salinity) as avg_salinity,
+                    AVG(m.oxygen) as avg_oxygen,
+                    COUNT(DISTINCT p.profile_id) as profile_count,
                     COUNT(*) as measurement_count
-                FROM measurements 
-                WHERE temperature IS NOT NULL
-                GROUP BY CASE WHEN lat > 0 THEN 'Northern Hemisphere' ELSE 'Southern Hemisphere' END;
+                FROM measurements m
+                JOIN profiles p ON m.profile_id = p.profile_id
+                WHERE m.temperature IS NOT NULL AND m.depth <= 100
+                GROUP BY p.region
+                ORDER BY avg_temperature DESC;
             """,
             
             'depth_ranges': """
@@ -150,11 +150,12 @@ class NLToSQLTranslator:
                         ELSE 'Bathypelagic Zone'
                     END as ocean_zone,
                     AVG(oxygen) as avg_oxygen,
-                    AVG(ph) as avg_ph,
-                    AVG(chlorophyll) as avg_chlorophyll,
+                    MIN(oxygen) as min_oxygen,
+                    MAX(oxygen) as max_oxygen,
+                    AVG(temperature) as avg_temperature,
                     COUNT(*) as measurement_count
                 FROM measurements 
-                WHERE oxygen IS NOT NULL AND ph IS NOT NULL
+                WHERE oxygen IS NOT NULL
                 GROUP BY CASE 
                     WHEN depth < 200 THEN 'Euphotic Zone'
                     WHEN depth < 1000 THEN 'Mesopelagic Zone'
@@ -178,7 +179,9 @@ class NLToSQLTranslator:
             # Relational terms
             r'\b(greater than|less than|higher|lower|above|below|top|bottom)\b',
             # Temporal analysis
-            r'\b(over time|temporal|monthly|yearly|seasonal)\b'
+            r'\b(over time|temporal|monthly|yearly|seasonal)\b',
+            # Summaries and groupings
+            r'\b(summary|summarize|summarise|overview|each float|per float|by month|by depth|by region|by zone)\b'
         ]
         
         query_lower = query.lower()
@@ -188,15 +191,24 @@ class NLToSQLTranslator:
         """Detect the intent/type of analytical query"""
         query_lower = query.lower()
         
+        if re.search(r'\b(oxygen|ph|chlorophyll|bgc|biogeochemical)\b', query_lower):
+            return 'bgc_analysis'
+        
+        if re.search(r'\b(depth range|depth ranges|zone|zones|layer|layers|surface and deep)\b', query_lower):
+            return 'depth_ranges'
+
         if any(word in query_lower for word in ['depth', 'profile', 'vertical']):
             if any(word in query_lower for word in ['average', 'mean']):
                 return 'avg_by_depth'
         
-        if any(word in query_lower for word in ['region', 'compare', 'hemisphere', 'north', 'south']):
+        if any(word in query_lower for word in ['region', 'hemisphere', 'arabian', 'bengal', 'basin']):
             return 'regional_comparison'
         
-        if any(word in query_lower for word in ['depth range', 'surface', 'deep', 'zone']):
+        if any(word in query_lower for word in ['depth range', 'surface', 'deep', 'zone', 'layer']):
             return 'depth_ranges'
+        
+        if any(word in query_lower for word in ['time', 'temporal', 'trend', 'month', 'year', 'weekly', 'over time']):
+            return 'temporal_trends'
         
         if any(word in query_lower for word in ['float', 'summary', 'overview']):
             return 'float_summary'
@@ -264,13 +276,9 @@ Return ONLY the SQL query without explanations or formatting:
         
         try:
             # Add timeout and simpler prompt for faster processing
-            response = ollama.chat(
-                model=config.LLM_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                options={"temperature": 0.1, "top_p": 0.9}  # More deterministic, faster
-            )
-            
-            sql_query = response["message"]["content"].strip()
+            sql_query = llm.chat(prompt, temperature=0.0)
+            if not sql_query:
+                return None, 'error'
             
             # Clean up formatting
             sql_query = re.sub(r'```sql\n?', '', sql_query)
@@ -278,6 +286,7 @@ Return ONLY the SQL query without explanations or formatting:
             sql_query = sql_query.strip()
             
             # Add safety limit if not present
+            sql_query = sql_query.rstrip().rstrip(';')
             if 'limit' not in sql_query.lower():
                 sql_query += ' LIMIT 1000'
             
@@ -289,15 +298,15 @@ Return ONLY the SQL query without explanations or formatting:
     
     def validate_sql(self, sql_query: str) -> bool:
         """Basic SQL validation before execution"""
-        dangerous_keywords = ['drop', 'delete', 'truncate', 'alter', 'create', 'insert', 'update']
+        dangerous_keywords = ['drop', 'delete', 'truncate', 'alter', 'create', 'insert', 'update', 'grant']
         sql_lower = sql_query.lower()
         
-        # Check for dangerous operations
-        if any(keyword in sql_lower for keyword in dangerous_keywords):
+        # Check for dangerous operations (whole words only, so created_at is fine)
+        if any(re.search(rf'\b{keyword}\b', sql_lower) for keyword in dangerous_keywords):
             return False
         
-        # Must be a SELECT statement
-        if not sql_lower.strip().startswith('select'):
+        # Must be a single SELECT (or WITH ... SELECT) statement
+        if not re.match(r'\s*(select|with)\b', sql_lower) or ';' in sql_lower.strip().rstrip(';'):
             return False
         
         return True
@@ -353,7 +362,8 @@ TABLE RELATIONSHIPS:
 
 KEY MEASUREMENT COLUMNS:
 - Physical: temperature, salinity, depth, pressure, lat, lon, time
-- BGC: oxygen, ph, chlorophyll, nitrate, backscatter, cdom, downwelling_par
+- BGC: oxygen (micromole/kg, only on BGC floats; ph/chlorophyll/nitrate are empty)
+- profiles.region: 'Arabian Sea', 'Bay of Bengal', 'Equatorial Indian Ocean', 'Southern Indian Ocean', 'Eastern Indian Ocean', 'Red Sea & Gulf of Aden'
 - Identifiers: float_id, profile_id, cycle_number, wmo_id
 
 COMMON QUERY PATTERNS:
@@ -366,11 +376,11 @@ COMMON QUERY PATTERNS:
         
         return schema_text
 
-def process_analytical_query(nl_query: str) -> Tuple[Optional[Dict], Optional[str]]:
+def process_analytical_query(nl_query: str, translator: Optional[NLToSQLTranslator] = None) -> Tuple[Optional[Dict], Optional[str]]:
     """Enhanced analytical query processing with comprehensive error handling"""
     
     try:
-        translator = NLToSQLTranslator()
+        translator = translator or NLToSQLTranslator()
         
         # Check if query is analytical
         if not translator.is_analytical_query(nl_query):
@@ -446,44 +456,24 @@ def get_sample_analytical_queries() -> Dict[str, List[str]]:
     return {
         "Depth Analysis": [
             "What is the average temperature at different depths?",
-            "Show salinity profiles by depth ranges",
-            "Compare temperature between surface and deep water",
-            "Find the deepest measurements for each float"
+            "Show average salinity by depth range",
         ],
-        
+
         "Regional Comparison": [
-            "Compare salinity between northern and southern hemispheres",
-            "Show temperature differences across ocean regions",
-            "Analyze BGC parameters by geographic location",
-            "Compare measurements between different latitude ranges"
+            "Compare surface temperature across ocean regions",
+            "Compare the Arabian Sea and the Bay of Bengal",
         ],
-        
+
         "Temporal Trends": [
-            "Show temperature trends over time",
-            "Count measurements by month",
-            "Analyze seasonal variations in ocean parameters",
-            "Track float deployment patterns over time"
+            "Show the monthly temperature trend",
         ],
-        
+
         "Float Analysis": [
-            "Show summary statistics for each float",
-            "Compare performance between different floats",
-            "Find floats with the most measurements",
-            "Analyze float operational duration"
+            "Show a summary for each float",
         ],
-        
+
         "BGC Parameters": [
-            "What are the oxygen levels below 500 meters?",
-            "Compare BGC parameters between surface and deep water",
-            "Show pH variations with depth",
-            "Analyze chlorophyll distribution in different ocean zones"
-        ],
-        
-        "Statistical Analysis": [
-            "Calculate correlation between temperature and salinity",
-            "Find outliers in temperature measurements",
-            "Show distribution of measurements by depth",
-            "Identify patterns in missing data"
+            "Average dissolved oxygen by ocean zone",
         ]
     }
 

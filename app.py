@@ -1,610 +1,542 @@
-import streamlit as st
+"""
+FloatChat - AI-powered ARGO ocean data explorer (Streamlit frontend)
+Talks to the FastAPI backend in main.py.
+"""
+
+import time
+
 import pandas as pd
-import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
-import time
-import random
-import pydeck as pdk
 import requests
+import streamlit as st
+from plotly.subplots import make_subplots
+
 import config
 
-# Page configuration
 st.set_page_config(
     page_title="FloatChat - ARGO Data Explorer",
     page_icon="🌊",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
+
+API = config.BACKEND_URL.rstrip("/")
+MAP_CENTER = {"lat": -8, "lon": 75}
+TEMP_SCALE = "Turbo"
+MAP_CONFIG = {"scrollZoom": False}  # keep the mouse wheel for page scrolling
+
+SUGGESTIONS = [  # (icon, topic, question)
+    ("🌡️", "Depth structure", "What is the average temperature at different depths?"),
+    ("🗺️", "Regions", "Compare surface temperature across ocean regions"),
+    ("🔎", "Find profiles", "Show me salinity profiles near the equator in March 2024"),
+    ("🫧", "Oxygen minimum", "Which floats measured low oxygen in the Arabian Sea?"),
+    ("🧪", "Biogeochemistry", "Average dissolved oxygen by ocean zone"),
+    ("📅", "Trends", "Show the monthly temperature trend"),
+]
+SAMPLE_QUESTIONS = [q for _, _, q in SUGGESTIONS]
+PAGES = ["Overview", "Ask FloatChat"]
 
 st.markdown("""
 <style>
-    /* Global dark theme with oceanic accents */
-    .main {
-        background: linear-gradient(135deg, #0f1419 0%, #1a2332 50%, #0f1419 100%);
-        color: #e8f4fd;
-    }
-    
-    /* Hero section styling */
-    .hero-container {
-        background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 50%, #3b82f6 100%);
-        padding: 4rem 2rem;
+    .block-container { padding-top: 2rem; max-width: 1400px; }
+    .hero {
+        background: radial-gradient(circle at 15% 20%, rgba(56,189,248,0.25), transparent 45%),
+                    radial-gradient(circle at 85% 80%, rgba(52,211,153,0.18), transparent 45%),
+                    linear-gradient(135deg, #0f1e3d 0%, #0b1220 100%);
+        border: 1px solid rgba(56,189,248,0.25);
         border-radius: 20px;
-        margin: 2rem 0;
-        text-align: center;
-        color: white;
-        box-shadow: 0 20px 40px rgba(59, 130, 246, 0.3);
-        border: 1px solid rgba(59, 130, 246, 0.2);
+        padding: 2.6rem 2.4rem;
+        margin-bottom: 1.4rem;
     }
-    
-    .hero-title {
-        font-size: 3.5rem;
-        font-weight: 800;
-        margin-bottom: 1rem;
-        text-shadow: 2px 2px 8px rgba(0,0,0,0.5);
-        background: linear-gradient(45deg, #60a5fa, #34d399);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
+    .hero h1 {
+        font-size: 3rem; font-weight: 800; margin: 0 0 .4rem 0;
+        background: linear-gradient(90deg, #7dd3fc, #34d399);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
     }
-    
-    .hero-subtitle {
-        font-size: 1.5rem;
-        font-weight: 300;
-        margin-bottom: 2rem;
-        opacity: 0.9;
-        color: #bfdbfe;
+    .hero .tagline { font-size: 1.25rem; color: #bae6fd; margin-bottom: .8rem; }
+    .hero p { color: #cbd5e1; max-width: 860px; line-height: 1.6; margin: 0; }
+    .card {
+        background: #111a2e; border: 1px solid #1e2b45; border-radius: 14px;
+        padding: 1.2rem 1.3rem; height: 100%;
     }
-    
-    /* Updated description styling for better centering and spacing */
-    .hero-description {
-        font-size: 1.2rem;
-        line-height: 1.8;
-        max-width: 1000px;
-        margin: 0 auto 3rem auto;
-        opacity: 0.9;
-        color: #dbeafe;
-        text-align: center;
-        padding: 0 1rem;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 120px;
+    .card h4 { margin: 0 0 .5rem 0; color: #7dd3fc; }
+    .card p { color: #94a3b8; margin: 0; font-size: .95rem; line-height: 1.5; }
+    div[data-testid="stMetric"] {
+        background: #111a2e; border: 1px solid #1e2b45; border-radius: 14px; padding: .9rem 1.1rem;
     }
-    
-    /* Enhanced launch button with larger size and bright yellow hover effect */
-    .launch-button {
-        background: #000000;
-        color: white;
-        padding: 1.5rem 4rem;
-        border: none;
-        border-radius: 50px;
-        font-size: 1.4rem;
-        font-weight: 700;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        text-decoration: none;
-        display: inline-block;
-        margin: 2rem auto;
-        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        border: 2px solid transparent;
+    .status-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; }
+    .footer { text-align: center; color: #64748b; font-size: .85rem; margin-top: 3rem; padding: 1.5rem 0;
+              border-top: 1px solid #1e2b45; }
+    .footer a { color: #7dd3fc; }
+    .pills { margin-top: 1.1rem; display: flex; flex-wrap: wrap; gap: .5rem; }
+    .pill, .badge {
+        display: inline-block; padding: .2rem .7rem; border-radius: 999px; font-size: .82rem;
+        background: rgba(56,189,248,0.10); border: 1px solid rgba(56,189,248,0.28); color: #bae6fd;
     }
-    
-    .launch-button:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 12px 35px rgba(255, 235, 59, 0.6);
-        background: #ffeb3b;
-        color: #000000;
-        border: 2px solid #fdd835;
+    .badge { font-size: .75rem; margin: 0 .35rem .5rem 0; padding: .1rem .6rem; }
+    .badge.sql { background: rgba(249,115,22,0.12); border-color: rgba(249,115,22,0.35); color: #fdba74; }
+    .badge.rag { background: rgba(52,211,153,0.12); border-color: rgba(52,211,153,0.35); color: #6ee7b7; }
+    .badge.muted { background: transparent; border-color: #1e2b45; color: #94a3b8; }
+    .topic { color: #7dd3fc; font-size: .78rem; font-weight: 600; text-transform: uppercase;
+             letter-spacing: .06em; margin: .2rem 0 .3rem .1rem; }
+    [class*="st-key-suggest_"] button {
+        min-height: 4.2rem; justify-content: flex-start; text-align: left;
+        background: #111a2e; border: 1px solid #1e2b45; border-radius: 14px;
     }
-    
-    /* Added button container for proper centering */
-    .button-container {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        margin: 2rem 0;
+    [class*="st-key-suggest_"] button:hover { border-color: #38bdf8; background: #13213b; }
+    [class*="st-key-suggest_"] button > div, [class*="st-key-suggest_"] button p {
+        justify-content: flex-start; text-align: left; width: 100%;
     }
-
-    /* Back button styling */
-    .back-button {
-        background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
-        color: white;
-        padding: 0.8rem 1.5rem;
-        border: none;
-        border-radius: 25px;
-        font-size: 1rem;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        margin-bottom: 1rem;
-    }
-    
-    .back-button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(107, 114, 128, 0.4);
-    }
-    
-    /* Chat styling */
-    .chat-message {
-        padding: 1.2rem;
-        margin: 0.8rem 0;
-        border-radius: 18px;
-        max-width: 85%;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-    }
-    
-    .user-message {
-        background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-        color: white;
-        margin-left: auto;
-        text-align: right;
-        border: 1px solid rgba(59, 130, 246, 0.3);
-    }
-    
-    .assistant-message {
-        background: linear-gradient(135deg, #1f2937 0%, #374151 100%);
-        border: 1px solid #4b5563;
-        color: #f3f4f6;
-    }
-    
-    /* Stats card styling */
-    .stats-card {
-        background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
-        border-radius: 15px;
-        padding: 1.5rem;
-        box-shadow: 0 8px 25px rgba(0,0,0,0.3);
-        margin: 1rem 0;
-        border: 1px solid #374151;
-        color: #f3f4f6;
-    }
-    
-    /* Search bar styling */
-    .search-container {
-        background: linear-gradient(135deg, #1f2937 0%, #374151 100%);
-        padding: 1rem;
-        border-radius: 15px;
-        margin: 1rem 0;
-        border: 1px solid #4b5563;
-    }
-    
-    /* Info cards styling */
-    .info-card {
-        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-        border-radius: 15px;
-        padding: 2rem;
-        margin: 1rem 0;
-        border: 1px solid #334155;
-        color: #e2e8f0;
-        box-shadow: 0 8px 25px rgba(0,0,0,0.2);
-    }
-    
-    /* Footer */
-    .footer {
-        text-align: center;
-        color: #9ca3af;
-        font-size: 0.9rem;
-        margin-top: 3rem;
-        padding: 2rem;
-        border-top: 1px solid #374151;
-        background: linear-gradient(135deg, #111827 0%, #1f2937 100%);
-        border-radius: 15px;
-    }
-    
-    /* Sidebar styling */
-    .css-1d391kg {
-        background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
-    }
-    
-    /* Override Streamlit's default styling */
-    .stSelectbox > div > div {
-        background-color: #374151;
-        color: #f3f4f6;
-    }
-    
-    .stDateInput > div > div {
-        background-color: #374151;
-        color: #f3f4f6;
-    }
+    .empty-state { text-align: center; padding: 1.5rem 0 1rem 0; }
+    .empty-state h3 { margin-bottom: .2rem; }
+    .empty-state p { color: #94a3b8; }
 </style>
 """, unsafe_allow_html=True)
 
 
-def query_backend(user_query, region="Pacific", date_range=None, data_type="All"):
-    """
-    Calls the live FastAPI backend to get a response from the RAG pipeline
-    and fetches detailed data for visualizations.
-    """
-    query_api_url = config.BACKEND_URL + "/query"
-    profiles_api_url = config.BACKEND_URL + "/get_profiles"
-    
-    # --- Step 1: Call the /query endpoint to get relevant documents ---
+# ---------------------------------------------------------------- API access
+
+def api_get(path: str, timeout: int = 15):
+    resp = requests.get(f"{API}{path}", timeout=timeout)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def api_post(path: str, payload: dict, timeout: int = 120):
+    resp = requests.post(f"{API}{path}", json=payload, timeout=timeout)
+    resp.raise_for_status()
+    return resp
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def get_health():
     try:
-        query_payload = {"query_text": user_query}
-        query_response = requests.post(query_api_url, json=query_payload, timeout=60)
-        query_response.raise_for_status()
-        api_data = query_response.json()
+        return api_get("/health", timeout=5)
+    except Exception:
+        return None
 
-        answer = api_data.get('answer', 'Sorry, I could not generate a response.')
-        metadata_list = api_data.get("retrieved_metadata", [])
 
-        # If no relevant documents were found, return early
-        if not metadata_list:
-            return {
-                'text': answer, 'float_locations': pd.DataFrame(),
-                'profile_data': pd.DataFrame(), 'metadata': {}
-            }
+@st.cache_data(ttl=600, show_spinner=False)
+def get_stats():
+    return api_get("/stats")
 
-        # --- Step 2: Create the DataFrame for the map from metadata ---
-        float_locations_df = pd.DataFrame(metadata_list)
-        float_locations_df = float_locations_df.rename(columns={'postgres_id': 'float_id', 'lat': 'latitude', 'lon': 'longitude'})
-        # Add dummy data for map columns that are not in the metadata
-        if 'temperature' not in float_locations_df:
-            float_locations_df['temperature'] = [random.uniform(10, 30) for _ in range(len(float_locations_df))]
-        if 'salinity' not in float_locations_df:
-            float_locations_df['salinity'] = [random.uniform(34, 38) for _ in range(len(float_locations_df))]
 
-        # --- Step 3: Call the /get_profiles endpoint to get real profile data ---
-        # Extract the list of postgres_ids from the metadata
-        profile_ids = [item['postgres_id'] for item in metadata_list]
+@st.cache_data(ttl=600, show_spinner=False)
+def get_floats():
+    return pd.DataFrame(api_get("/floats"))
 
-        profile_data_df = pd.DataFrame()
-        if profile_ids:
-            profile_payload = {"ids": profile_ids}
-            profile_response = requests.post(profiles_api_url, json=profile_payload, timeout=60)
-            profile_response.raise_for_status()
-            profile_data_list = profile_response.json()
-            
-            # This DataFrame contains data for ALL retrieved profiles
-            full_profile_data_df = pd.DataFrame(profile_data_list)
 
-            # For the plot, we'll just show the data for the TOP search result
-            # A more advanced UI could let the user select which profile to view
-            top_result_id = profile_ids[0]
-            profile_data_df = full_profile_data_df[full_profile_data_df['id'] == top_result_id]
+@st.cache_data(ttl=600, show_spinner=False)
+def get_float_track(float_id: str):
+    return pd.DataFrame(api_get(f"/profiles/float/{float_id}"))
 
-        return {
-            'text': answer,
-            'float_locations': float_locations_df,
-            'profile_data': profile_data_df, # Now with REAL data for the top result
-            'metadata': {
-                'query_time': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                'region': region,
-                'data_type': data_type,
-                'n_floats': len(float_locations_df)
-            }
-        }
 
+@st.cache_data(ttl=600, show_spinner=False)
+def get_profiles(profile_ids: tuple):
+    return pd.DataFrame(api_post("/get_profiles", {"profile_ids": list(profile_ids)}).json())
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def export_profiles(profile_ids: tuple, fmt: str) -> bytes:
+    return api_post("/export", {"format": fmt, "profile_ids": list(profile_ids)}).content
+
+
+def ask_backend(question: str) -> dict:
+    try:
+        started = time.perf_counter()
+        response = api_post("/query", {"query_text": question}).json()
+        response["elapsed"] = time.perf_counter() - started
+        return response
     except requests.exceptions.RequestException as e:
-        st.error(f"API Connection Error: {e}")
-        return {
-            'text': "I'm having trouble connecting to the data server. Please try again later.",
-            'float_locations': pd.DataFrame(), 'profile_data': pd.DataFrame(), 'metadata': {}
-        }
+        return {"answer": f"⚠️ I couldn't reach the FloatChat API at `{API}` ({e.__class__.__name__}). "
+                          "Is the backend running?", "query_type": "error", "retrieved_metadata": []}
 
-def create_animated_ocean_map():
-    """Create an animated global ocean map with moving ARGO floats using reliable map provider"""
-    # Generate sample float data with animation
-    n_floats = 100
-    
-    # Create base float positions with better global distribution
-    float_data = []
-    for i in range(n_floats):
-        # Better distribution across ocean basins
-        if i < 40:  # Pacific
-            base_lat = np.random.uniform(-50, 50)
-            base_lon = np.random.uniform(120, -80)
-        elif i < 70:  # Atlantic
-            base_lat = np.random.uniform(-50, 60)
-            base_lon = np.random.uniform(-80, 20)
-        else:  # Indian Ocean
-            base_lat = np.random.uniform(-50, 30)
-            base_lon = np.random.uniform(20, 120)
-        
-        status = np.random.choice(['Active', 'Inactive'], p=[0.85, 0.15])
-        
-        float_data.append({
-            'latitude': base_lat,
-            'longitude': base_lon,
-            'status': status,
-            'float_id': f'ARGO_{i:04d}',
-            'temperature': np.random.uniform(5, 30),
-            'salinity': np.random.uniform(34, 38),
-            'depth': np.random.uniform(0, 2000),
-            'last_contact': np.random.randint(1, 30)
-        })
-    
-    df = pd.DataFrame(float_data)
-    
-    # Use Plotly for more reliable map rendering
-    fig = px.scatter_mapbox(
-        df,
-        lat="latitude",
-        lon="longitude",
-        color="status",
-        size="temperature",
-        hover_data=["float_id", "temperature", "salinity", "depth", "last_contact"],
-        color_discrete_map={"Active": "#10b981", "Inactive": "#ef4444"},
-        size_max=15,
-        zoom=1.2,
-        title="🌍 Global ARGO Float Network - Real-time Status",
-        mapbox_style="open-street-map"
-    )
-    
+
+# ---------------------------------------------------------------- charts
+
+def style(fig, height=460):
     fig.update_layout(
-        height=600,
-        margin={"r":0,"t":50,"l":0,"b":0},
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='white')
+        height=height,
+        margin=dict(l=10, r=10, t=50, b=10),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(17,26,46,0.6)",
+        font=dict(color="#e2e8f0"),
+        legend=dict(bgcolor="rgba(0,0,0,0)"),
     )
-    
     return fig
 
-def show_homepage():
-    """Display the enhanced homepage with modern hero section"""
+
+def float_map(floats: pd.DataFrame):
+    fig = px.scatter_map(
+        floats, lat="lat", lon="lon", color="surface_temperature",
+        color_continuous_scale=TEMP_SCALE, zoom=2.1, center=MAP_CENTER,
+        hover_name="float_id",
+        hover_data={"region": True, "last_profile": True, "n_profiles": True,
+                    "surface_temperature": ":.2f", "surface_salinity": ":.2f", "lat": ":.2f", "lon": ":.2f"},
+        labels={"surface_temperature": "Surface °C", "surface_salinity": "Surface PSU",
+                "n_profiles": "Profiles", "last_profile": "Last profile"},
+        map_style="carto-darkmatter",
+    )
+    fig.update_traces(marker=dict(size=9, opacity=0.9))
+    fig.update_layout(title="Latest position of every float (colored by surface temperature)")
+    return style(fig, 560)
+
+
+def profiles_map(meta: pd.DataFrame):
+    fig = px.scatter_map(
+        meta, lat="lat", lon="lon", color="region", hover_name="float_id",
+        hover_data={"date": True, "cycle_number": True, "lat": ":.2f", "lon": ":.2f", "region": False},
+        zoom=3 if meta["lat"].max() - meta["lat"].min() < 25 else 2.1,
+        center={"lat": meta["lat"].mean(), "lon": meta["lon"].mean()}, map_style="carto-darkmatter",
+    )
+    fig.update_traces(marker=dict(size=13))
+    fig.update_layout(title="Where the matching profiles were recorded")
+    return style(fig, 460)
+
+
+def profile_plot(data: pd.DataFrame):
+    has_oxygen = data["oxygen"].notna().any()
+    variables = [("temperature", "Temperature (°C)"), ("salinity", "Salinity (PSU)")]
+    if has_oxygen:
+        variables.append(("oxygen", "Oxygen (µmol/kg)"))
+    fig = make_subplots(rows=1, cols=len(variables), shared_yaxes=True,
+                        subplot_titles=[label for _, label in variables])
+    palette = px.colors.qualitative.Set2
+    for i, (key, group) in enumerate(data.groupby(["float_id", "cycle_number"], sort=False)):
+        label = f"Float {key[0]} · cycle {key[1]}"
+        color = palette[i % len(palette)]
+        for col, (var, _) in enumerate(variables, start=1):
+            if group[var].notna().any():
+                fig.add_trace(go.Scatter(x=group[var], y=group["depth"], mode="lines+markers", name=label,
+                                         legendgroup=label, showlegend=col == 1,
+                                         line=dict(color=color, width=2), marker=dict(size=4)),
+                              row=1, col=col)
+    fig.update_yaxes(autorange="reversed", title_text="Depth (m)", row=1, col=1)
+    style(fig, 520)
+    fig.update_layout(legend=dict(orientation="h", yanchor="top", y=-0.08, x=0), margin=dict(t=40))
+    return fig
+
+
+def analytical_chart(df: pd.DataFrame, intent: str):
+    if df.empty:
+        return None
+    if intent == "avg_by_depth":
+        fig = make_subplots(rows=1, cols=2, shared_yaxes=True,
+                            subplot_titles=["Mean temperature (°C)", "Mean salinity (PSU)"])
+        fig.add_trace(go.Scatter(x=df["avg_temperature"], y=df["depth"], mode="lines+markers",
+                                 name="Temperature", line=dict(color="#f97316", width=3)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df["avg_salinity"], y=df["depth"], mode="lines+markers",
+                                 name="Salinity", line=dict(color="#38bdf8", width=3)), row=1, col=2)
+        fig.update_yaxes(autorange="reversed", title_text="Depth (m)", row=1, col=1)
+        return style(fig)
+    if intent == "regional_comparison":
+        fig = px.bar(df, x="region", y="avg_temperature", color="avg_salinity",
+                     color_continuous_scale="Viridis", text_auto=".1f",
+                     labels={"avg_temperature": "Mean temperature, upper 100 m (°C)", "avg_salinity": "Salinity",
+                             "region": ""}, title="Upper-ocean temperature by region")
+        fig.update_traces(textposition="outside")
+        return style(fig)
+    if intent == "depth_ranges":
+        fig = px.bar(df, x="depth_range", y="avg_temperature", color="avg_salinity",
+                     color_continuous_scale="Viridis", text_auto=".1f",
+                     labels={"avg_temperature": "Mean temperature (°C)", "depth_range": "", "avg_salinity": "Salinity"},
+                     title="Temperature by depth layer")
+        fig.update_traces(textposition="outside")
+        return style(fig)
+    if intent == "temporal_trends":
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
+        fig.add_trace(go.Scatter(x=df["month"], y=df["avg_temperature"], name="Temperature (°C)",
+                                 mode="lines+markers", line=dict(color="#f97316", width=3)))
+        fig.add_trace(go.Scatter(x=df["month"], y=df["avg_salinity"], name="Salinity (PSU)",
+                                 mode="lines+markers", line=dict(color="#38bdf8", width=3)), secondary_y=True)
+        fig.update_layout(title="Monthly means")
+        return style(fig)
+    if intent == "float_summary":
+        top = df.sort_values("total_profiles", ascending=False).head(20)
+        fig = px.bar(top, x="float_id", y="total_profiles", color="avg_temperature",
+                     color_continuous_scale=TEMP_SCALE,
+                     labels={"float_id": "Float", "total_profiles": "Profiles", "avg_temperature": "Mean °C"},
+                     title="Most active floats")
+        fig.update_xaxes(type="category")
+        return style(fig)
+    if intent == "bgc_analysis":
+        fig = px.bar(df, x="ocean_zone", y="avg_oxygen",
+                     error_y=df["max_oxygen"] - df["avg_oxygen"], error_y_minus=df["avg_oxygen"] - df["min_oxygen"],
+                     labels={"avg_oxygen": "Dissolved oxygen (µmol/kg)", "ocean_zone": ""},
+                     title="Dissolved oxygen by ocean zone (bars = mean, whiskers = range)")
+        fig.update_traces(marker_color="#34d399")
+        return style(fig)
+    # Generic: first text column vs first numeric column
+    text_cols = [c for c in df.columns if pd.api.types.is_string_dtype(df[c]) or df[c].dtype == object]
+    num_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+    if text_cols and num_cols:
+        return style(px.bar(df.head(30), x=text_cols[0], y=num_cols[0]))
+    return None
+
+
+# ---------------------------------------------------------------- UI pieces
+
+def render_sidebar():
+    with st.sidebar:
+        st.markdown("## 🌊 FloatChat")
+        page = st.radio("Navigate", PAGES, key="page", label_visibility="collapsed")
+
+        st.markdown("#### System status")
+        health = get_health()
+
+        def row(ok, label, detail=""):
+            color = "#34d399" if ok else ("#fbbf24" if ok is None else "#f87171")
+            st.markdown(f'<span class="status-dot" style="background:{color}"></span>{label}'
+                        f'<span style="color:#64748b"> {detail}</span>', unsafe_allow_html=True)
+
+        if health is None:
+            row(False, "API offline", API)
+        else:
+            row(health["database"] == "connected", "PostgreSQL", f"{health['measurements']:,} measurements")
+            row(health["chromadb"] == "connected", "Vector index", f"{health['indexed_profiles']:,} profiles")
+            llm_info = health["llm"]
+            if not llm_info["configured"]:
+                row(None, "LLM", "not configured (data-only answers)")
+            else:
+                row(llm_info["reachable"], "LLM", llm_info["model"] if llm_info["reachable"]
+                    else f"{llm_info['model']} – {llm_info.get('error') or 'unreachable'}")
+
+        if page == "Ask FloatChat" and st.session_state.messages:
+            st.markdown("#### Try asking")
+            for icon, _, q in SUGGESTIONS:
+                st.button(q, key=f"sample_{q}", icon=icon, width="stretch", on_click=ask, args=(q,))
+            if st.button("🗑️ Clear conversation", width="stretch"):
+                st.session_state.messages = []
+                st.rerun()
+
+
+def ask(question: str):
+    """Button callback: switch to the chat and queue a question."""
+    st.session_state.page = "Ask FloatChat"
+    st.session_state.pending_question = question
+
+
+def go_to(page: str):
+    st.session_state.page = page
+
+
+def render_overview():
     st.markdown("""
-    <div class="hero-container">
-        <h1 class="hero-title">🌊 FloatChat</h1>
-        <p class="hero-subtitle">AI-Powered ARGO Ocean Data Explorer</p>
-        <div class="hero-description">
-            FloatChat is your AI-powered gateway to the world's oceans. It empowers scientists, students, and marine enthusiasts to explore, visualize, and analyze ARGO float data in real time. With natural language querying, you can ask questions like 'Show me temperature patterns in the Pacific over the last month' or 'Find salinity trends at 1000m depth,' and instantly see insightful visualizations. From tracking ocean currents to discovering climate change indicators, FloatChat puts the pulse of the ocean at your fingertips — anywhere, anytime.
+    <div class="hero">
+        <h1>FloatChat</h1>
+        <div class="tagline">Ask the ocean questions in plain English.</div>
+        <p>FloatChat lets scientists, students and curious people explore real ARGO float observations from the
+        Indian Ocean. Ask about temperature, salinity or oxygen; it writes the SQL or searches thousands of profiles
+        for you, then draws the maps and charts.</p>
+        <div class="pills">
+            <span class="pill">🛰️ Real ARGO observations</span>
+            <span class="pill">🧮 Natural language → SQL</span>
+            <span class="pill">🔎 RAG over 3,900 profiles</span>
+            <span class="pill">📦 CSV · NetCDF · ASCII export</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
-    
-    col1, col2, col3 = st.columns([2, 1, 2])
-    with col2:
-        if st.button("🚀 Launch Chatbot", key="main_launch_btn", help="Start exploring ARGO data with AI assistance", 
-                    use_container_width=True):
-            st.session_state.current_page = "chatbot"
-            st.rerun()
-    
-    st.markdown("---")
-    
-    st.subheader("🌍 Global ARGO Float Network")
-    st.markdown("*Interactive visualization of ARGO floats across the world's oceans*")
-    
-    # Create and display the fixed map
-    fig = create_animated_ocean_map()
-    st.plotly_chart(fig, use_container_width=True)
 
-def create_float_map(float_data, region):
-    """Create an interactive map showing ARGO float locations with enhanced styling."""
-    fig = px.scatter_mapbox(
-        float_data,
-        lat="latitude",
-        lon="longitude",
-        color="temperature",
-        size="depth",
-        hover_data=["float_id", "salinity"],
-        color_continuous_scale="Viridis",
-        size_max=15,
-        zoom=2,
-        title=f"🗺️ ARGO Float Locations - {region}",
-        mapbox_style="open-street-map"
-    )
-    
-    fig.update_layout(
-        height=500,
-        margin={"r":0,"t":50,"l":0,"b":0},
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(31,41,55,0.8)',
-        font=dict(color='white')
-    )
-    
-    return fig
+    cta1, cta2, _ = st.columns([1, 1.2, 3])
+    cta1.button("💬 Start asking", type="primary", width="stretch", on_click=go_to, args=("Ask FloatChat",))
+    cta2.button("✨ Try a demo question", width="stretch",
+                on_click=ask, args=("Which floats measured low oxygen in the Arabian Sea?",))
 
-def create_profile_plots(profile_data):
-    """Create temperature and salinity profile plots with enhanced styling."""
-    fig = go.Figure()
-    
-    # Temperature profile
-    fig.add_trace(go.Scatter(
-        x=profile_data['temperature'],
-        y=-profile_data['depth'],  # Negative for oceanographic convention
-        mode='lines+markers',
-        name='Temperature (°C)',
-        line=dict(color='#ef4444', width=3),
-        marker=dict(size=6),
-        yaxis='y'
-    ))
-    
-    # Salinity profile on secondary y-axis
-    fig.add_trace(go.Scatter(
-        x=profile_data['salinity'],
-        y=-profile_data['depth'],
-        mode='lines+markers',
-        name='Salinity (PSU)',
-        line=dict(color='#3b82f6', width=3),
-        marker=dict(size=6),
-        xaxis='x2',
-        yaxis='y'
-    ))
-    
-    fig.update_layout(
-        title="📈 Temperature and Salinity Profiles",
-        xaxis=dict(title="Temperature (°C)", side="bottom", color='white'),
-        xaxis2=dict(title="Salinity (PSU)", overlaying="x", side="top", color='white'),
-        yaxis=dict(title="Depth (m)", color='white'),
-        height=500,
-        showlegend=True,
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(31,41,55,0.8)',
-        font=dict(color='white')
-    )
-    
-    return fig
+    try:
+        stats, floats = get_stats(), get_floats()
+    except Exception:
+        st.error(f"Can't reach the FloatChat API at `{API}`. Start it with `uvicorn main:app` "
+                 "(or `docker compose up`) and refresh.")
+        return
 
-def show_chatbot():
-    """Display the enhanced chatbot page with back button"""
-    if st.button("⬅ Back to Homepage", key="back_btn", help="Return to homepage"):
-        st.session_state.current_page = "homepage"
+    start, end = pd.to_datetime(stats["start_date"]), pd.to_datetime(stats["end_date"])
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("ARGO floats", f"{stats['floats']:,}")
+    c2.metric("Profiles", f"{stats['profiles']:,}")
+    c3.metric("Measurements", f"{stats['measurements']:,}")
+    c4.metric("BGC (oxygen) floats", f"{stats['bgc_floats']:,}")
+    if start.year == end.year:
+        c5.metric(f"Period ({end.year})", f"{start:%b}–{end:%b}")
+    else:
+        c5.metric("Period", f"{start:%Y}–{end:%Y}")
+
+    floats = floats.reset_index(drop=True)
+    left, right = st.columns([3, 1])
+    with left:
+        event = st.plotly_chart(float_map(floats), config=MAP_CONFIG, key="float_map",
+                                on_select="rerun", selection_mode="points")
+        # Clicking a float opens it in the explorer below (only react to new clicks)
+        points = tuple(p.get("point_index") for p in (event.selection.points if event else []))
+        if points and points != st.session_state.get("last_map_click"):
+            st.session_state.last_map_click = points
+            st.session_state.explorer_float = floats.loc[points[0], "float_id"]
+        st.caption("💡 Click any float to explore its trajectory and profiles below.")
+    with right:
+        regions = pd.DataFrame(stats["regions"]).sort_values("profiles")
+        fig = px.bar(regions, x="profiles", y="region", orientation="h", text_auto=True,
+                     labels={"profiles": "", "region": ""}, title="Profiles by region")
+        fig.update_traces(marker_color="#38bdf8", textposition="auto")
+        fig.update_xaxes(showticklabels=False, showgrid=False)
+        st.plotly_chart(style(fig, 560))
+
+    st.markdown("### How it works")
+    cards = [
+        ("🧮 Analytical questions → SQL",
+         "Questions like <i>\"average temperature at different depths\"</i> become SQL that runs on PostgreSQL. "
+         "Common patterns use vetted templates; anything else is written by the LLM and checked to be read-only."),
+        ("🔎 Descriptive questions → RAG",
+         "Every profile is summarised in words and embedded into ChromaDB. FloatChat finds the closest matches, "
+         "narrowed by any region or month you mention, and the LLM answers from them."),
+        ("📈 Visualize & export",
+         "Each answer comes with maps, depth profiles or charts, and the underlying data can be downloaded "
+         "as CSV, NetCDF or ASCII."),
+    ]
+    for col, (title, body) in zip(st.columns(3), cards):
+        col.markdown(f'<div class="card"><h4>{title}</h4><p>{body}</p></div>', unsafe_allow_html=True)
+
+    st.markdown("### Explore a single float")
+    options = floats.sort_values("n_profiles", ascending=False)
+    labels = {r.float_id: f"{r.float_id} · {r.region} · {r.n_profiles} profiles" for r in options.itertuples()}
+    st.session_state.setdefault("explorer_float", next(iter(labels)))
+    float_id = st.selectbox("Float", list(labels), format_func=labels.get, key="explorer_float")
+    track = get_float_track(float_id)
+    if not track.empty:
+        a, b = st.columns(2)
+        with a:
+            fig = px.line_map(track, lat="profile_lat", lon="profile_lon", zoom=3.5,
+                              center={"lat": track["profile_lat"].mean(), "lon": track["profile_lon"].mean()},
+                              map_style="carto-darkmatter", hover_data=["cycle_number", "profile_date"])
+            fig.add_trace(go.Scattermap(lat=track["profile_lat"], lon=track["profile_lon"], mode="markers",
+                                        marker=dict(size=9, color=track["avg_temp"], colorscale=TEMP_SCALE),
+                                        text=track["profile_date"], name="Profiles"))
+            fig.update_layout(title=f"Trajectory of float {float_id}", showlegend=False)
+            st.plotly_chart(style(fig, 520), config=MAP_CONFIG)
+        with b:
+            latest = tuple(track.sort_values("cycle_number")["profile_id"].tail(3).tolist())
+            st.plotly_chart(profile_plot(get_profiles(latest)))
+
+
+def answer_badges(response: dict) -> str:
+    kind = response.get("query_type")
+    meta = response.get("retrieved_metadata") or []
+    badges = []
+    if kind == "analytical":
+        info = meta[0] if meta else {}
+        badges.append(f'<span class="badge sql">🧮 SQL · {info.get("intent", "query").replace("_", " ")} · '
+                      f'{info.get("row_count", 0)} rows</span>')
+    elif kind == "semantic":
+        badges.append(f'<span class="badge rag">🔎 Profile search · {len(meta)} matches</span>')
+    if "elapsed" in response:
+        badges.append(f'<span class="badge muted">⏱ {response["elapsed"]:.1f} s</span>')
+    return "".join(badges)
+
+
+def render_response(msg: dict, idx: int):
+    """Charts and data that accompany an assistant answer."""
+    response = msg.get("response") or {}
+    kind = response.get("query_type")
+    meta = response.get("retrieved_metadata") or []
+
+    if kind == "analytical" and response.get("sql_results"):
+        info = meta[0] if meta else {}
+        df = pd.DataFrame(response["sql_results"])
+        if "month" in df:
+            df["month"] = pd.to_datetime(df["month"])
+        fig = analytical_chart(df, info.get("intent", "custom"))
+        if fig is not None:
+            st.plotly_chart(fig, key=f"chart_{idx}")
+        with st.expander("Data & SQL"):
+            st.dataframe(df, hide_index=True)
+            st.code(info.get("sql_query", ""), language="sql")
+
+    elif kind == "semantic" and meta:
+        meta_df = pd.DataFrame(meta)
+        profile_ids = tuple(int(p) for p in meta_df["profile_id"])
+        tab_map, tab_profiles, tab_data = st.tabs(["🗺️ Map", "📈 Profiles", "📋 Data & export"])
+        with tab_map:
+            st.plotly_chart(profiles_map(meta_df), key=f"map_{idx}", config=MAP_CONFIG)
+        with tab_profiles:
+            shown = st.multiselect(
+                "Profiles to plot", profile_ids, default=list(profile_ids[:3]), key=f"sel_{idx}",
+                format_func=lambda p: "Float {float_id} · {date}".format(**meta_df.set_index("profile_id").loc[p]),
+            )
+            if shown:
+                st.plotly_chart(profile_plot(get_profiles(tuple(shown))), key=f"prof_{idx}")
+        with tab_data:
+            st.dataframe(meta_df[["float_id", "cycle_number", "date", "lat", "lon", "region"]], hide_index=True)
+            cols = st.columns(3)
+            for col, (fmt, ext, mime) in zip(cols, [("csv", "csv", "text/csv"),
+                                                    ("netcdf", "nc", "application/x-netcdf"),
+                                                    ("ascii", "txt", "text/plain")]):
+                col.download_button(f"Download {fmt.upper()}", data=lambda f=fmt: export_profiles(profile_ids, f),
+                                    file_name=f"floatchat_profiles.{ext}", mime=mime,
+                                    key=f"dl_{fmt}_{idx}", width="stretch")
+        with st.expander("Retrieved context"):
+            for doc in response.get("context_documents", []):
+                st.caption(doc)
+
+
+def render_chat():
+    st.markdown("## 💬 Ask FloatChat")
+    st.caption("Ask about temperature, salinity or oxygen in the Indian Ocean (Jan–Mar 2024). "
+               "Statistical questions run as SQL; descriptive ones search the profile index.")
+
+    if not st.session_state.messages:
+        st.markdown("""
+        <div class="empty-state">
+            <h3>What would you like to know about the ocean?</h3>
+            <p>Pick a question to get started, or type your own below.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        for row in (SUGGESTIONS[:3], SUGGESTIONS[3:]):
+            for col, (icon, topic, q) in zip(st.columns(3), row):
+                with col:
+                    st.markdown(f'<div class="topic">{icon} {topic}</div>', unsafe_allow_html=True)
+                    st.button(q, key=f"suggest_{topic}", width="stretch", wrap=True, on_click=ask, args=(q,))
+
+    for idx, msg in enumerate(st.session_state.messages):
+        with st.chat_message(msg["role"], avatar="🧑" if msg["role"] == "user" else "🌊"):
+            if msg["role"] == "assistant" and msg.get("response"):
+                st.markdown(answer_badges(msg["response"]), unsafe_allow_html=True)
+            st.markdown(msg["content"])
+            if msg["role"] == "assistant":
+                render_response(msg, idx)
+
+    question = st.chat_input("e.g. Show me salinity profiles near the equator in March 2024")
+    question = question or st.session_state.pop("pending_question", None)
+    if question:
+        st.session_state.messages.append({"role": "user", "content": question})
+        with st.spinner("Diving into the data…"):
+            response = ask_backend(question)
+        st.session_state.messages.append({"role": "assistant", "content": response["answer"], "response": response})
         st.rerun()
-    
-    st.markdown('<h1 style="text-align: center; color: #60a5fa; font-size: 2.5rem; margin-bottom: 2rem;">💬 FloatChat Assistant</h1>', unsafe_allow_html=True)
-    
-    # Initialize session state for chat history
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-    
-    if "last_response" not in st.session_state:
-        st.session_state.last_response = None
-    
-    # Sidebar controls with enhanced styling
-    with st.sidebar:
-        st.header("🔧 Data Filters")
-        
-        # Region selection
-        region = st.selectbox(
-            "Select Ocean Region",
-            ["Pacific", "Atlantic", "Indian Ocean"],
-            help="Choose the ocean region for data exploration"
-        )
-        
-        # Date range picker
-        st.subheader("📅 Time Period")
-        col1, col2 = st.columns(2)
-        with col1:
-            start_date = st.date_input(
-                "Start Date",
-                value=datetime.now() - timedelta(days=365),
-                max_value=datetime.now()
-            )
-        with col2:
-            end_date = st.date_input(
-                "End Date",
-                value=datetime.now(),
-                max_value=datetime.now()
-            )
-        
-        date_range = (start_date, end_date)
-        
-        # Data type toggle
-        data_type = st.radio(
-            "Data Type",
-            ["All", "CTD", "BGC"],
-            help="CTD: Conductivity, Temperature, Depth | BGC: Biogeochemical"
-        )
-        
-        # Display current settings
-        st.markdown("---")
-        st.subheader("📊 Current Settings")
-        st.info(f"""
-        **Region:** {region}  
-        **Period:** {start_date} to {end_date}  
-        **Data Type:** {data_type}
-        """)
-    
-    # Main content area
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.subheader("💬 Chat Interface")
-        
-        # Chat container with custom styling
-        chat_container = st.container()
-        
-        with chat_container:
-            # Display chat messages with improved styling
-            for i, message in enumerate(st.session_state.messages):
-                if message["role"] == "user":
-                    st.markdown(f"""
-                    <div class="chat-message user-message">
-                        <strong>You:</strong> {message["content"]}
-                    </div>
-                    """, unsafe_allow_html=True)
-                else:
-                    st.markdown(f"""
-                    <div class="chat-message assistant-message">
-                        <strong>🤖 FloatChat:</strong> {message["content"]}
-                    </div>
-                    """, unsafe_allow_html=True)
-        
-        # Chat input
-        if prompt := st.chat_input("Ask me about ARGO ocean data... (e.g., 'Show me salinity profiles near the equator in March 2023')"):
-            # Add user message to chat history
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            
-            # Display assistant response with loading
-            with st.spinner("🔍 Analyzing ARGO data..."):
-                response = query_backend(prompt, region, date_range, data_type)
-                st.session_state.last_response = response
-            
-            # Add assistant response to chat history
-            st.session_state.messages.append({"role": "assistant", "content": response['text']})
-            st.rerun()
-    
-    with col2:
-        st.subheader("📈 Query Statistics")
-        if st.session_state.last_response:
-            metadata = st.session_state.last_response['metadata']
-            
-            # Enhanced stats display
-            st.markdown(f"""
-            <div class="stats-card">
-                <h4>📊 Last Query Results</h4>
-                <p><strong>Active Floats:</strong> {metadata['n_floats']}</p>
-                <p><strong>Region:</strong> {metadata['region']}</p>
-                <p><strong>Data Type:</strong> {metadata['data_type']}</p>
-                <p><strong>Timestamp:</strong> {metadata['query_time']}</p>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.info("💡 Ask a question to see data statistics!")
-    
-    if st.session_state.last_response:
-        st.markdown("---")
-        st.subheader("📊 Data Visualizations")
-        
-        # Create tabs for different views
-        tab1, tab2 = st.tabs(["🗺️ Map View", "📈 Profile Plots"])
-        
-        with tab1:
-            st.plotly_chart(
-                create_float_map(
-                    st.session_state.last_response['float_locations'], 
-                    region
-                ),
-                use_container_width=True
-            )
-        
-        with tab2:
-            st.plotly_chart(
-                create_profile_plots(st.session_state.last_response['profile_data']),
-                use_container_width=True
-            )
-        
-        # Data table (expandable)
-        with st.expander("📋 View Raw Float Data"):
-            st.dataframe(
-                st.session_state.last_response['float_locations'],
-                use_container_width=True
-            )
+
 
 def main():
-    """Main application function with simplified navigation."""
-    if "current_page" not in st.session_state:
-        st.session_state.current_page = "homepage"
-    
-    # Display selected page based on session state
-    if st.session_state.current_page == "homepage":
-        show_homepage()
+    st.session_state.setdefault("page", "Overview")
+    st.session_state.setdefault("messages", [])
+
+    # Shareable demo links: ?q=<question> opens the chat and asks it
+    if "q" in st.query_params and not st.session_state.get("query_param_used"):
+        st.session_state.query_param_used = True
+        st.session_state.page = "Ask FloatChat"
+        st.session_state.pending_question = st.query_params["q"]
+
+    render_sidebar()
+    if st.session_state.page == "Overview":
+        render_overview()
     else:
-        show_chatbot()
-    
+        render_chat()
+
     st.markdown("""
     <div class="footer">
-        <p><strong>FloatChat v2.0</strong> | Powered by ARGO Global Ocean Observing System</p>
-        <p>🌊 Exploring the world's oceans through AI-powered data analysis</p>
-        <p><a href="https://argo.ucsd.edu/" target="_blank" style="color: #60a5fa;">Learn more about ARGO</a> | 
-        <a href="#" style="color: #60a5fa;">Documentation</a> | 
-        <a href="#" style="color: #60a5fa;">Support</a></p>
+        FloatChat · data: <a href="https://argo.ucsd.edu/" target="_blank">Argo Program</a> via
+        <a href="https://erddap.ifremer.fr/erddap/" target="_blank">Ifremer ERDDAP</a> ·
+        built with FastAPI, PostgreSQL, ChromaDB and Streamlit
     </div>
     """, unsafe_allow_html=True)
+
 
 if __name__ == "__main__":
     main()
