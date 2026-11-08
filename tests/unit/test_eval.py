@@ -75,6 +75,17 @@ def test_semantic_answers_must_only_return_matching_profiles():
     assert check_case(FIND, 200, semantic([]), 10)["answer"] is False
 
 
+def test_a_no_match_case_passes_only_when_the_answer_says_nothing_matched():
+    case = {**FIND, "expect": {**FIND["expect"], "no_match": True}}
+    honest = semantic([bengal(region="Arabian Sea")], fallback=True)
+    honest["answer"] = "No profiles were recorded in the Bay of Bengal in this dataset, so these are the closest..."
+    assert check_case(case, 200, honest, 10)["answer"] is True
+    pretends = semantic([bengal(region="Arabian Sea")], fallback=True)
+    pretends["answer"] = "Here are the Bay of Bengal profiles..."
+    assert check_case(case, 200, pretends, 10)["answer"] is False
+    assert check_case(case, 200, semantic([bengal()]), 10)["answer"] is False
+
+
 def test_optional_filters_are_ignored_when_comparing():
     assert check_case(FIND, 200, semantic([bengal()]), 10)["filters"] is True
     assert check_case(FIND, 200, semantic([bengal()], filters={"region": "Bay of Bengal"}), 10)["filters"] is True

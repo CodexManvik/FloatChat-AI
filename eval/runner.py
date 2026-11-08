@@ -64,11 +64,17 @@ def _check_analytical(response: dict) -> str | None:
     return f"SQL does not apply {', '.join(missing)}" if missing else None
 
 
-def _check_semantic(response: dict) -> str | None:
+def _check_semantic(response: dict, expect_no_match: bool = False) -> str | None:
+    widened = any(s.get("step") == "search" and s.get("fallback_without_filters") for s in response.get("steps") or [])
+    if expect_no_match:
+        # The dataset has nothing matching: the answer must say so rather than present other profiles as matches
+        if not widened or not response.get("answer", "").startswith("No profiles were recorded"):
+            return "should have said no profiles match"
+        return None
     profiles = response.get("retrieved_metadata") or []
     if not profiles:
         return "no profiles returned"
-    if any(s.get("step") == "search" and s.get("fallback_without_filters") for s in response.get("steps") or []):
+    if widened:
         return "no profile matched the filters (search was widened)"
     filters = response.get("filters") or {}
     wrong = sum(not _profile_matches(p, filters) for p in profiles)
@@ -116,7 +122,7 @@ def check_case(case: dict, status: int, response: dict, latency_ms: int) -> dict
     elif response.get("query_type") == "analytical":
         problem = _check_analytical(response)
     else:
-        problem = _check_semantic(response)
+        problem = _check_semantic(response, expect.get("no_match", False))
     result["answer"] = problem is None
     notes = []
     if not result["routing"]:
