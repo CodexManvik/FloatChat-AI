@@ -69,7 +69,7 @@ export function FloatViews({ id, track }: { id: string; track: TrackPoint[] }) {
     <div className="grid gap-5">
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
         <Panel title="Trajectory" note={`${track.length} surfacings, from light (first) to dark (latest).`}>
-          <MiniMap points={points} line height={340} label={`Trajectory of float ${id}`} />
+          <MiniMap points={points} line height={340} minSpan={3} label={`Trajectory of float ${id}`} />
         </Panel>
         <Panel
           title="Latest profile"

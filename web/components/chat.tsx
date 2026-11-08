@@ -15,6 +15,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { formatDate, formatMs, formatPosition } from "@/lib/format";
 import {
   applyEvent,
+  compactAnalytical,
   currentPhase,
   failRun,
   filterChips,
@@ -111,6 +112,7 @@ function SemanticResult({ result }: { result: QueryResult }) {
         points={profiles.map((p) => ({ lat: p.lat, lon: p.lon, label: `Float ${p.float_id}, ${p.date}` }))}
         label="Map of the matching profiles"
         height={280}
+        minSpan={16}
       />
       <ul className="grid content-start gap-2">
         {profiles.map((p) => {
@@ -190,6 +192,8 @@ function Turn({ run, now, onRetry, onAsk, isLast }: {
   const [copied, setCopied] = useState(false);
   const phase = currentPhase(run);
   const waking = run.status === "streaming" && run.steps.length === 0 && now - run.startedAt > 4000;
+  // Once done, an analytical answer shows its title and explanation; the rows live in the chart and table
+  const compact = run.status === "done" && run.result?.query_type === "analytical" ? compactAnalytical(run.answer) : null;
 
   return (
     <article className="grid gap-4" aria-busy={run.status === "streaming"}>
@@ -209,7 +213,14 @@ function Turn({ run, now, onRetry, onAsk, isLast }: {
           <RunSummary run={run} />
         ) : null}
 
-        {run.answer && <AnswerMarkdown text={run.answer} streaming={run.status === "streaming"} />}
+        {compact ? (
+          <>
+            <AnswerMarkdown text={compact.title} />
+            <AnswerMarkdown text={compact.insight} />
+          </>
+        ) : (
+          run.answer && <AnswerMarkdown text={run.answer} streaming={run.status === "streaming"} />
+        )}
 
         {run.status === "error" && (
           <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3 text-sm" role="alert">

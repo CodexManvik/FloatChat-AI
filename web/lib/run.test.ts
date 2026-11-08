@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyEvent, currentPhase, filterChips, historyFrom, newRun, stopRun } from "./run";
+import { applyEvent, compactAnalytical, currentPhase, filterChips, historyFrom, newRun, stopRun } from "./run";
 import type { QueryResult, Step } from "./types";
 
 const understood: Step = { step: "understood", path: "analytical", intent: "avg_by_depth",
@@ -47,6 +47,18 @@ describe("run reducer", () => {
     expect(historyFrom(runs).map((h) => h.question)).toEqual(["q2", "q4", "q5"]);
     expect(historyFrom(runs)[0]).toEqual({ question: "q2", query_type: "analytical", intent: "avg_by_depth",
       filters: { region: "Arabian Sea" } });
+  });
+});
+
+describe("compactAnalytical", () => {
+  it("keeps the title and the explanation", () => {
+    const answer = "**Averages by depth**\n\n- **5 m**: 28 °C\n- **10 m**: 27 °C\n\n**What this means:** Warm on top.";
+    expect(compactAnalytical(answer)).toEqual({ title: "**Averages by depth**", insight: "**What this means:** Warm on top." });
+  });
+
+  it("returns null without an explanation", () => {
+    expect(compactAnalytical("**Averages by depth**\n\n- **5 m**: 28 °C")).toBeNull();
+    expect(compactAnalytical("**T**\n\n**What this means:**")).toBeNull();
   });
 });
 

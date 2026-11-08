@@ -74,7 +74,7 @@ def _prompt(question: str, history: list[dict]) -> str:
 
 
 def llm_route(question: str, history: list[dict], chat) -> Route | None:
-    reply = chat(_prompt(question, history or []), temperature=0.0, max_tokens=300, json_mode=True)
+    reply = chat(_prompt(question, history or []), temperature=0.0, max_tokens=600, json_mode=True)
     if not reply:
         return None
     try:
