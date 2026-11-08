@@ -11,6 +11,7 @@ pytestmark = pytest.mark.integration
 def make_client(engine, **kwargs):
     kwargs.setdefault("get_embedder_fn", FakeEmbedder)
     kwargs.setdefault("chat_fn", lambda *a, **k: None)
+    kwargs.setdefault("llm_enabled", lambda: False)
     return TestClient(create_app(engine=engine, **kwargs))
 
 
@@ -72,6 +73,23 @@ def test_cache_and_query_log(reader_engine, loaded_db):
     with loaded_db.connect() as conn:
         rows = conn.execute(text("SELECT cached, success FROM query_log ORDER BY id")).all()
     assert [tuple(r) for r in rows] == [(False, True), (True, True)]
+
+
+def test_answers_are_not_cached_when_the_llm_failed(reader_engine, loaded_db):
+    # A transient LLM failure must not pin the data-only answer in the cache for 24 hours
+    calls = []
+
+    def flaky_llm(*a, **k):
+        calls.append(1)
+        return None if len(calls) == 1 else "MOCK ANSWER"
+
+    client = make_client(reader_engine, chat_fn=flaky_llm, llm_enabled=lambda: True)
+    assert ask(client, "Show me profiles in the Arabian Sea").json()["answer"].startswith("Here are the")
+    assert ask(client, "Show me profiles in the Arabian Sea").json()["answer"] == "MOCK ANSWER"
+    assert ask(client, "Show me profiles in the Arabian Sea").json()["answer"] == "MOCK ANSWER"
+    with loaded_db.connect() as conn:
+        cached = conn.execute(text("SELECT cached FROM query_log ORDER BY id")).scalars().all()
+    assert cached == [False, False, True]
 
 
 def test_llm_budget_falls_back_to_data_only(reader_engine):

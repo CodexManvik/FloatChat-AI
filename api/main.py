@@ -57,7 +57,8 @@ class ExportRequest(BaseModel):
 
 
 def create_app(engine=None, get_embedder_fn=get_embedder, chat_fn=llm.chat, query_limits=None,
-               other_limit_per_minute: int = 60, llm_budget: int | None = None) -> FastAPI:
+               other_limit_per_minute: int = 60, llm_budget: int | None = None,
+               llm_enabled=llm.is_configured) -> FastAPI:
     engine = engine or make_engine(config.DATABASE_URL)
     per_minute, per_day = query_limits or (config.QUERY_LIMIT_PER_MINUTE, config.QUERY_LIMIT_PER_DAY)
     query_limiter = RateLimiter(per_minute, per_day, noun="questions")
@@ -150,7 +151,9 @@ def create_app(engine=None, get_embedder_fn=get_embedder, chat_fn=llm.chat, quer
                 logger.exception("Failed to answer %r", question)
                 result = {"answer": ERROR_ANSWER, "query_type": "error", "context_documents": [],
                           "retrieved_metadata": [], "intent": None, "llm_used": False}
-            if result["query_type"] != "error":
+            # Don't pin a data-only answer for 24 h when the LLM should have helped but failed (e.g. rate limit)
+            llm_expected = llm_enabled() and not budget.exhausted
+            if result["query_type"] != "error" and (result.get("llm_used") or not llm_expected):
                 answers.set(key, result)
         queries.log_query(engine, question=question, query_type=result["query_type"], intent=result.get("intent"),
                           latency_ms=int((time.perf_counter() - started) * 1000),
