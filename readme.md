@@ -5,7 +5,8 @@
 ![FloatChat overview](docs/screenshots/overview.png)
 
 **Contents:** [What FloatChat is](#-what-floatchat-is) · [How it's built](#-how-its-built) ·
-[Run it on your machine](#-run-it-on-your-machine) · [Using it](#-using-floatchat) ·
+[How well it works](#-how-well-it-works) · [Run it on your machine](#-run-it-on-your-machine) ·
+[Using it](#-using-floatchat) ·
 [Limitations & roadmap](#-limitations--roadmap)
 
 ---
@@ -62,19 +63,23 @@ The repo ships with **real Argo observations** from the **Indian Ocean, January�
 - Each profile is labelled with a region: Arabian Sea, Bay of Bengal, Equatorial, Southern and Eastern Indian Ocean,
   Red Sea & Gulf of Aden
 
-You can download a different period or ocean region with one command (see [Using other data](#using-other-data)).
+The **live demo** keeps a rolling **last 12 months** of the same region (about 660 floats and 20,000 profiles),
+refreshed every night by GitHub Actions. You can download a different period or ocean region with one command (see
+[Using other data](#using-other-data)).
 
 ---
 
 ## 🏗️ How it's built
 
 ```
- ┌─────────────┐  HTTP  ┌──────────────── API (FastAPI) ───────────────────────────────┐
- │  Streamlit  │ ─────► │ POST /query ─► statistical? ─ yes ─► SQL agent ─► Postgres      │
- │  (app.py)   │ ◄───── │                └─ no ─► pgvector search (+ filters)             │
- └─────────────┘  JSON  │                         └─► LLM (e.g. Groq) writes the answer   │
-                        │ rate limits · LLM budget · answer cache · query log             │
-                        └──────────────────────────────▲──────────────────────────────────┘
+ ┌─────────────┐  HTTP  ┌──────────────── API (FastAPI) ─────────────────────────────────────┐
+ │  Streamlit  │ ─────► │ POST /query, /query/stream (live steps + tokens)                      │
+ │  (app.py)   │ ◄───── │   router (LLM, keyword fallback): SQL or search? which filters?      │
+ └─────────────┘  JSON  │   ├─ SQL: template or LLM-written SQL, repaired from DB errors ─► PG  │
+                  / SSE │   └─ search: pgvector + filters ─► matching profiles                  │
+                        │   LLM (e.g. Groq) explains the result · every step is reported        │
+                        │ rate limits · LLM budget · answer cache · query log                   │
+                        └──────────────────────────────▲────────────────────────────────────────┘
                                                        │ read-only role
    GitHub Actions (daily) ─► ERDDAP ─► pipeline ─► PostgreSQL + pgvector
 ```
@@ -103,9 +108,11 @@ You can download a different period or ocean region with one command (see [Using
 
 | Component | What it does |
 |---|---|
-| `floatchat/sql_agent.py` | Decides whether a question is statistical, and which kind (by depth, by region, by depth layer, monthly trend, per float, biogeochemistry). Known kinds run hand-written SQL templates; other statistical questions get LLM-written SQL, which must pass a read-only check before it runs. |
-| `floatchat/search.py` | pgvector similarity search with region, month, year and sensor filters. |
-| `floatchat/answer.py` | Turns SQL rows or matching profiles into the answer, with an LLM explanation when one is available. |
+| `floatchat/router.py` | Decides how to answer: SQL (and which analysis: by depth, by region, by depth layer, monthly trend, per float, biogeochemistry, or custom) or profile search, with which filters. The LLM reads free phrasing and follow-ups (*"now only the Bay of Bengal"*) and replies in JSON that is validated; keyword rules take over whenever the LLM is unavailable or its reply is unusable. |
+| `floatchat/filters.py` | The only filters that ever reach SQL (region, month, year, sensor), validated and always passed as bound parameters. |
+| `floatchat/sql_agent.py` | Known analyses run hand-written SQL templates with the question's filters. Other statistical questions get LLM-written SQL, which must pass a read-only check; if the database rejects it, the error goes back to the LLM to fix it (up to 2 repairs). |
+| `floatchat/search.py` | pgvector similarity search with region, month, year and sensor filters (exact when filtered, so rare combinations still find their matches). |
+| `floatchat/answer.py` | Turns SQL rows or matching profiles into the answer, with an LLM explanation when one is available, and records every step (what was understood, each SQL attempt, the search, who wrote the answer) so the answer can show its work. |
 | `floatchat/embedder.py` | The all-MiniLM-L6-v2 embedding model (ONNX). Each batch is padded only to its longest text, so a question embeds in a few milliseconds. |
 | `floatchat/llm.py` | A small client for any **OpenAI-compatible** chat API (Groq, OpenAI, Ollama, LM Studio, …). Without an LLM, FloatChat answers from the data alone. |
 | `floatchat/regions.py`, `exports.py`, `config.py`, `db/` | Region boxes and question filters; CSV/NetCDF/ASCII exports; settings; schema, roles and read queries. |
@@ -114,7 +121,8 @@ You can download a different period or ocean region with one command (see [Using
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /query` | The main endpoint. It takes a question and returns the answer text, the query type (`analytical` or `semantic`), the SQL rows or matching profiles, and the context used. |
+| `POST /query` | The main endpoint. It takes a question (plus up to 3 earlier turns, for follow-ups) and returns the answer text, the query type (`analytical` or `semantic`), the filters it understood, the SQL rows or matching profiles, and the steps it took. |
+| `POST /query/stream` | The same answer as Server-Sent Events: `step` events as the work happens, `token` events as the answer is written, then a `result` event with the `/query` payload. |
 | `GET /stats` | Dataset totals, sensors, date range, last update and profiles per region. |
 | `GET /floats` | Each float's latest position and surface readings (the overview map). |
 | `POST /get_profiles` | All depth levels for the requested profiles (the profile plots). |
@@ -135,6 +143,8 @@ Interactive API docs are at `http://localhost:8000/docs` while the backend is ru
   - a chart, or a map plus temperature/salinity/oxygen profiles
   - the data table and SQL
   - download buttons
+  - a **How I answered** panel: what the router understood, each SQL attempt, the search, and who wrote the text
+- Follow-up questions work: the last three turns are sent along, so *"now only the Arabian Sea"* keeps the analysis.
 - The sidebar shows whether the database, vector index and LLM are connected.
 
 ### 6. Packaging, deployment and tests
@@ -143,7 +153,8 @@ Interactive API docs are at `http://localhost:8000/docs` while the backend is ru
 |---|---|
 | `Dockerfile.api`, `Dockerfile` | The API image (with the embedding model built in) and the Streamlit image. |
 | `docker-compose.yml` | Runs PostgreSQL + pgvector, the API (which loads the data on first start) and the frontend. |
-| `.github/workflows/` | `ci.yml` (lint, tests, container memory check), `refresh.yml` (daily data), `backfill.yml` (first load). |
+| `.github/workflows/` | `ci.yml` (lint, tests, container memory check), `refresh.yml` (daily data), `backfill.yml` (first load), `eval.yml` (weekly benchmark against the live API). |
+| `eval/` | 30 benchmark questions and the runner that scores the API (see [How well it works](#-how-well-it-works)). |
 | `DEPLOY.md` | Step-by-step free deployment: Neon, Render, GitHub Actions, cron-job.org and Groq. |
 | `tests/` | Unit tests, plus integration tests against a real Postgres + pgvector (`tests/integration`). |
 
@@ -155,6 +166,7 @@ FloatChat-AI/
 ├── api/                    # FastAPI app: endpoints, rate limits, caches
 ├── floatchat/              # core: SQL agent, search, answers, embedder, LLM client, database
 ├── pipeline/               # ERDDAP → standard depths → descriptions/embeddings → Postgres
+├── eval/                   # benchmark questions, scoring runner, latest results
 ├── scripts/                # smoke test, container memory check
 ├── data/                   # bundled Argo snapshot + embedding cache
 ├── tests/                  # unit/ and integration/
@@ -163,6 +175,30 @@ FloatChat-AI/
 ├── streamlit_app.py, components/, styles/, utils/   # experimental dashboard (WIP, see README_DASHBOARD.md)
 └── legacy/                 # early prototype scripts, kept for reference
 ```
+
+---
+
+## 📏 How well it works
+
+`eval/questions.json` holds 30 benchmark questions covering every analysis, every region, months, years, sensors,
+descriptive searches and follow-ups. Each says how it should be understood, and the runner checks three things:
+
+- **Routing:** SQL or profile search, and for SQL, the right analysis
+- **Filters:** exactly the right region, month, year and sensor filters
+- **Answer:** SQL returned rows and really applies the filters it reports; every profile a search returned matches
+  them
+
+```bash
+python -m eval --api https://floatchat-ai-svjw.onrender.com   # paced for the public rate limit, ~4 minutes
+```
+
+It writes `eval/latest.md` (the table below) and `eval/latest.json`. GitHub Actions runs it against the live API
+every Monday (`eval.yml`) and shows the table in the job summary. Without an LLM the keyword router still handles the
+template questions and simple follow-ups; the free-phrasing and custom-SQL questions are where the LLM earns its keep.
+
+<!-- eval-score -->
+**Latest score:** see [`eval/latest.md`](eval/latest.md).
+<!-- /eval-score -->
 
 ---
 
@@ -306,7 +342,8 @@ New data needs new embeddings, which takes a few minutes on a CPU. The region fi
 ## 🗺️ Limitations & roadmap
 
 - The bundled local data is a three-month snapshot; the deployed version keeps a rolling 12 months, refreshed daily.
-- Deciding between SQL and search uses keywords; an LLM-based router would understand more phrasings.
+- Without an LLM, deciding between SQL and search falls back to keywords, which miss free phrasings (see the evaluation).
+- Next: a custom web app (Next.js) with a landing page that streams each answer's steps live from `/query/stream`.
 - Region boundaries are approximate boxes.
 - `streamlit_app.py` and `components/` are an experimental, feature-heavy dashboard that still uses mock data in
   places. They are not part of the demo (see `README_DASHBOARD.md`).

@@ -1,0 +1,33 @@
+name: Evaluation
+
+on:
+  workflow_dispatch:
+    inputs:
+      api:
+        description: "API to evaluate"
+        default: "https://floatchat-ai-svjw.onrender.com"
+  schedule:
+    - cron: "0 4 * * 1"   # Mondays 04:00 UTC, after the daily refresh
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install "requests==2.34.2"
+      - name: Ask the benchmark questions and score the answers
+        run: python -m eval --api "${{ github.event.inputs.api || 'https://floatchat-ai-svjw.onrender.com' }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-results
+          path: |
+            eval/latest.json
+            eval/latest.md
