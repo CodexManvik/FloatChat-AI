@@ -58,7 +58,8 @@ def fetch_window(dataset: Dataset, start: datetime, end: datetime, bbox,
             if resp.status_code == 404:  # ERDDAP answers 404 when no rows match
                 return pd.DataFrame()
             resp.raise_for_status()
-            return pd.read_csv(io.StringIO(resp.text), skiprows=[1])
+            # QC columns mix numbers and blanks; read whole files at once so pandas doesn't warn per chunk
+            return pd.read_csv(io.StringIO(resp.text), skiprows=[1], low_memory=False)
         except Exception as e:
             last_error = e
             if attempt < retries:
