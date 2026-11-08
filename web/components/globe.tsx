@@ -3,10 +3,9 @@
 import { geoDistance, geoGraticule10, geoOrthographic, geoPath, type GeoPermissibleObjects } from "d3-geo";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { feature } from "topojson-client";
-import type { GeometryCollection, Topology } from "topojson-specification";
 import { CMOCEAN, sample } from "@/lib/colors";
 import { formatDate, formatNumber } from "@/lib/format";
+import { loadLand } from "@/lib/land";
 import type { FloatPoint } from "@/lib/types";
 
 const CENTER: [number, number] = [76, -10]; // the Indian Ocean
@@ -42,7 +41,7 @@ export function Globe({ floats }: { floats: FloatPoint[] }) {
     const box = wrap.current!;
     const ctx = el.getContext("2d")!;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const projection = geoOrthographic().clipAngle(90).precision(0.5);
+    const projection = geoOrthographic().clipAngle(90).precision(1);
     const path = geoPath(projection, ctx);
     const graticule = geoGraticule10();
     let land: GeoPermissibleObjects | null = null;
@@ -55,6 +54,8 @@ export function Globe({ floats }: { floats: FloatPoint[] }) {
     let visible = true;
     let frame = 0;
     let hovered: FloatPoint | null = null;
+    let needsDraw = true;
+    let lastDraw = -Infinity;
     // Skip the near-black start of the thermal scale so cold floats stay visible on dark water
     const dotColor = floats.map((f) =>
       f.surface_temperature == null
@@ -62,9 +63,9 @@ export function Globe({ floats }: { floats: FloatPoint[] }) {
         : sample("thermal", 0.14 + 0.86 * ((f.surface_temperature - domain[0]) / (domain[1] - domain[0]))),
     );
 
-    import("world-atlas/land-110m.json").then((mod) => {
-      const topo = (mod.default ?? mod) as unknown as Topology<{ land: GeometryCollection }>;
-      land = feature(topo, topo.objects.land) as unknown as GeoPermissibleObjects;
+    loadLand().then((fc) => {
+      land = fc as unknown as GeoPermissibleObjects;
+      needsDraw = true;
     });
 
     function resize() {
@@ -131,8 +132,13 @@ export function Globe({ floats }: { floats: FloatPoint[] }) {
       ctx.stroke();
     }
 
+    // The sway is slow, so ~24 redraws a second look identical and leave the main thread free
     function loop(now: number) {
-      if (visible) draw(now);
+      if (visible && (needsDraw || dragging || (!reduce && now - lastDraw > 42))) {
+        draw(now);
+        lastDraw = now;
+        needsDraw = false;
+      }
       frame = requestAnimationFrame(loop);
     }
 
@@ -191,18 +197,29 @@ export function Globe({ floats }: { floats: FloatPoint[] }) {
     resizeObserver.observe(box);
     const io = new IntersectionObserver(([entry]) => (visible = entry.isIntersecting));
     io.observe(el);
-    const themeObserver = new MutationObserver(() => (colors = tokens()));
+    const themeObserver = new MutationObserver(() => {
+      colors = tokens();
+      needsDraw = true;
+    });
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const onScheme = () => (colors = tokens());
+    const onScheme = () => {
+      colors = tokens();
+      needsDraw = true;
+    };
     media.addEventListener("change", onScheme);
     el.addEventListener("pointerdown", onDown);
     el.addEventListener("pointermove", onMove);
     el.addEventListener("pointerup", onUp);
     el.addEventListener("pointerleave", onLeave);
-    frame = requestAnimationFrame(loop);
+    // Start once the page has painted and the browser is idle, so the globe never delays the first render
+    const start = () => (frame = requestAnimationFrame(loop));
+    const hasIdle = typeof window.requestIdleCallback === "function";
+    const idle = hasIdle ? window.requestIdleCallback(start, { timeout: 2500 }) : window.setTimeout(start, 1200);
 
     return () => {
+      if (hasIdle) window.cancelIdleCallback(idle);
+      else window.clearTimeout(idle);
       cancelAnimationFrame(frame);
       resizeObserver.disconnect();
       io.disconnect();
