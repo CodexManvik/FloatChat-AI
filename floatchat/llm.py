@@ -77,7 +77,10 @@ def chat_stream(prompt: str, system: str | None = None, temperature: float = 0.2
         return
     try:
         resp = _post(_payload(prompt, system, temperature, max_tokens, json_mode=False, stream=True), stream=True)
-        for line in resp.iter_lines(decode_unicode=True):
+        # Read bytes and decode as UTF-8: event streams often have no charset, and requests would then fall back to
+        # ISO-8859-1 and garble characters such as "µ" or narrow spaces
+        for raw in resp.iter_lines():
+            line = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
             if not line or not line.startswith("data: "):
                 continue
             data = line[len("data: "):]

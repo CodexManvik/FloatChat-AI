@@ -74,6 +74,14 @@ def test_stream_yields_tokens(monkeypatch):
     assert sent[0]["stream"] is True
 
 
+def test_stream_decodes_utf8_bytes(monkeypatch):
+    # Event streams usually carry no charset; the bytes must still be read as UTF-8
+    text = "O₂ minimum 0.8 µmol/kg"
+    line = ("data: " + json.dumps({"choices": [{"delta": {"content": text}}]}, ensure_ascii=False)).encode("utf-8")
+    install(monkeypatch, [FakeResponse(lines=[line, b"data: [DONE]"])])
+    assert "".join(llm.chat_stream("q")) == text
+
+
 def test_stream_yields_nothing_without_an_llm(monkeypatch):
     monkeypatch.setattr(config, "LLM_BASE_URL", "")
     assert list(llm.chat_stream("q")) == []
