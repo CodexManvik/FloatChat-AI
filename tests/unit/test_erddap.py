@@ -57,6 +57,21 @@ def test_fetch_window_retries_then_succeeds():
     assert len(calls) == 3 and not df.empty
 
 
+def test_fetch_window_backs_off_long_enough_for_a_short_outage():
+    # ERDDAP refused connections during the first real backfill; retries must outlast a few minutes of that
+    calls, waits = [], []
+
+    def refused_five_times(url, timeout):
+        calls.append(url)
+        if len(calls) <= 5:
+            raise ConnectionRefusedError("Connection refused")
+        return fixture_get(url, timeout)
+
+    df = fetch_window(CORE, START, END, BBOX, get=refused_five_times, sleep=waits.append)
+    assert not df.empty and len(calls) == 6
+    assert waits == [10, 20, 40, 80, 160]
+
+
 def test_fetch_window_raises_after_retries():
     def broken(url, timeout):
         raise ConnectionError("down")

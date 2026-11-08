@@ -49,7 +49,7 @@ def build_url(dataset: Dataset, start: datetime, end: datetime, bbox) -> str:
 
 
 def fetch_window(dataset: Dataset, start: datetime, end: datetime, bbox,
-                 get=requests.get, sleep=time.sleep, retries: int = 3) -> pd.DataFrame:
+                 get=requests.get, sleep=time.sleep, retries: int = 6) -> pd.DataFrame:
     url = build_url(dataset, start, end, bbox)
     last_error = None
     for attempt in range(1, retries + 1):
@@ -62,7 +62,8 @@ def fetch_window(dataset: Dataset, start: datetime, end: datetime, bbox,
         except Exception as e:
             last_error = e
             if attempt < retries:
-                sleep(5 * attempt)
+                # ERDDAP sometimes refuses connections for a few minutes: back off 10 s, 20 s, ... (about 5 min total)
+                sleep(10 * 2 ** (attempt - 1))
     raise FetchError(f"{dataset.name} {start:%Y-%m-%d}..{end:%Y-%m-%d} failed after {retries} attempts: {last_error}")
 
 

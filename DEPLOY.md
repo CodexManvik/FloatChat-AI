@@ -5,8 +5,8 @@ FloatChat's live demo runs entirely on free tiers:
 | Piece | Service | Why |
 |---|---|---|
 | Database (Postgres + pgvector) | [Neon](https://neon.com) free plan | 1 GB storage; suspends when idle |
-| API (FastAPI container) | [Koyeb](https://www.koyeb.com) free instance | 512 MB / 0.1 vCPU; sleeps after 1 h idle |
-| Keep-awake ping | [cron-job.org](https://cron-job.org) | calls `/ping` every 30 min |
+| API (FastAPI container) | [Render](https://render.com) free web service | 512 MB / 0.1 CPU; sleeps after 15 min idle; 750 free hours a month |
+| Keep-awake ping | [cron-job.org](https://cron-job.org) | calls `/ping` every 10 min so Render never sleeps |
 | Data loading | GitHub Actions | backfill once, refresh daily at 02:00 UTC |
 | LLM | [Groq](https://console.groq.com) | free API key |
 
@@ -14,16 +14,23 @@ You create every account and paste every secret yourself. Nothing secret goes in
 
 ## 1. Neon: database and roles
 
-1. Sign up at neon.com and create a project named `floatchat`, **Postgres 16**, in the region you will
-   also use on Koyeb (**Frankfurt** or **Washington, D.C.**).
-2. On the project dashboard, open **Connect**, choose the `neondb` database and the owner role, and copy the
-   connection string. This is the **admin URL**. It looks like
-   `postgresql://neondb_owner:...@ep-...-pooler.<region>.aws.neon.tech/neondb?sslmode=require`.
-3. Pick a strong password for the read-only API role (e.g. 24+ random characters) and keep it handy.
-4. On your machine, in the repo folder, create the schema and the reader role:
+1. Sign up at neon.com and create a project named `floatchat` in **AWS Europe Central 1 (Frankfurt)**, the same
+   region you will use on Render. Only the **Postgres database** service is needed.
+2. On the project dashboard, open **Connect**, choose the `neondb` database and the owner role, **turn off
+   connection pooling**, and copy the connection string. This is the **admin URL**. It looks like
+   `postgresql://neondb_owner:...@ep-....eu-central-1.aws.neon.tech/neondb?sslmode=require`.
+3. Generate a strong password for the read-only API role and keep it somewhere safe:
 
    ```bash
-   ADMIN_DATABASE_URL='<admin URL>' READER_PASSWORD='<reader password>' python -m pipeline create-reader
+   python -c "import secrets; print(secrets.token_urlsafe(24))"
+   ```
+
+4. In the repo folder, create the schema and the reader role (PowerShell shown; in bash use `export NAME=value`):
+
+   ```powershell
+   $env:ADMIN_DATABASE_URL = '<admin URL>'
+   $env:READER_PASSWORD = '<reader password>'
+   python -m pipeline create-reader
    ```
 
    Expected: `Reader role ready.`
@@ -32,34 +39,49 @@ You create every account and paste every secret yourself. Nothing secret goes in
 
 ## 2. GitHub: secret and first data load
 
-1. In the GitHub repo: **Settings → Secrets and variables → Actions → New repository secret**:
-   name `NEON_ADMIN_URL`, value = the admin URL.
+1. Add the admin URL as a repository secret named `NEON_ADMIN_URL`, either in **Settings → Secrets and variables →
+   Actions**, or from the same terminal:
+
+   ```powershell
+   gh secret set NEON_ADMIN_URL --repo <owner>/<repo> --body $env:ADMIN_DATABASE_URL
+   ```
+
 2. **Actions → Backfill data → Run workflow** (leave the inputs blank). It loads the last 365 days
    (about 30–60 minutes). Expected last log line: `backfill: <N> profiles added, 0 removed`.
 3. **Actions → Daily data refresh** runs every day at 02:00 UTC. Run it once by hand to check it works.
 
-## 3. Koyeb: the API
+## 3. Render: the API
 
-1. Sign up at koyeb.com and create a **Web Service** from **GitHub**, selecting this repository and the
-   `main` branch.
-2. Builder: **Dockerfile**, path `Dockerfile.api`. Instance: **Free**. Region: the same as Neon.
-3. Port: `8000`, protocol HTTP, public route `/`. Health check: HTTP `GET /ping`.
-4. Environment variables (mark the database URL and key as **Secret**):
+1. Sign up at dashboard.render.com and click **New → Web Service**, connecting this GitHub repository.
+2. Settings:
 
-   | Name | Value |
+   | Setting | Value |
+   |---|---|
+   | Language | **Docker** |
+   | Branch | `main` |
+   | Region | **Frankfurt (EU Central)** |
+   | Instance type | **Free** |
+   | Dockerfile Path (Advanced) | `Dockerfile.api` (the default `./Dockerfile` builds the Streamlit app instead) |
+   | Docker Build Context | `.` |
+   | Health Check Path (Advanced) | `/ping` |
+   | Auto-Deploy | On Commit |
+
+3. Environment variables:
+
+   | Key | Value |
    |---|---|
    | `DATABASE_URL` | the **reader URL** |
    | `LLM_BASE_URL` | `https://api.groq.com/openai/v1` |
-   | `LLM_MODEL` | `llama-3.3-70b-versatile` (or any current Groq chat model) |
+   | `LLM_MODEL` | a current Groq chat model (see console.groq.com/docs/models), e.g. `openai/gpt-oss-120b` |
    | `LLM_API_KEY` | your Groq key |
    | `LLM_DAILY_BUDGET` | `2000` |
    | `ALLOWED_ORIGINS` | `http://localhost:3000` for now; add the Vercel URL in Phase 3 |
 
-5. Deploy. When it is healthy, note the public URL, e.g. `https://floatchat-api-<name>.koyeb.app`.
-6. Check it:
+4. Click **Deploy web service**. Render passes the port in `$PORT`, which the image already uses. When the service
+   is **Live**, check it:
 
    ```bash
-   python scripts/smoke_test.py https://floatchat-api-<name>.koyeb.app
+   python scripts/smoke_test.py https://<your-service>.onrender.com
    ```
 
    Expected: `All checks passed.`
@@ -67,17 +89,19 @@ You create every account and paste every secret yourself. Nothing secret goes in
 ## 4. cron-job.org: keep the API awake
 
 1. Sign up at cron-job.org and create a cron job:
-   - URL: `https://floatchat-api-<name>.koyeb.app/ping`
-   - Schedule: every 30 minutes
-2. `/ping` never touches the database, so Neon still suspends between real visits.
+   - URL: `https://<your-service>.onrender.com/ping`
+   - Schedule: every 10 minutes
+2. Render's free tier sleeps after 15 minutes without traffic and allows 750 instance hours a month, enough for one
+   service running all month. `/ping` never touches the database, so Neon still suspends between real visits.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| Koyeb build runs out of memory | Builds run on Koyeb's builders, not the free instance; retry. If it repeats, check the build log for a failing `pip install` |
+| Render builds the wrong app | Check **Settings → Dockerfile Path** is `Dockerfile.api` |
 | `/health` says `"database": "disconnected"` | Check `DATABASE_URL` uses `floatchat_reader` and the right password, and keeps `?sslmode=require` |
-| `/health` says `"vector_index": "empty"` | The backfill has not run yet or failed: check **Actions → Backfill data** |
-| LLM shows *missing or invalid LLM_API_KEY* | Re-paste the Groq key in Koyeb and redeploy |
+| `/health` says `"vector_index": "empty"` | The backfill has not finished or failed: check **Actions → Backfill data** |
+| LLM shows *missing or invalid LLM_API_KEY* | Re-paste the Groq key in Render's environment variables (it redeploys automatically) |
+| The first request takes about a minute | The service went to sleep: check the cron-job.org job is enabled and succeeding |
 | Daily refresh failed | Usually ERDDAP being slow or down; the site keeps serving the previous data. Re-run the workflow later |
-| Koyeb's free tier changes | The API is a plain Docker image: Render (free, sleeps after 15 min) or any Docker host works with the same environment variables |
+| Render's free tier changes | The API is a plain Docker image: any Docker host (Google Cloud Run, Hugging Face Spaces, Fly.io) works with the same environment variables |

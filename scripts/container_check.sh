@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start the API image, fire 20 questions, and fail if memory exceeds the Koyeb budget.
+# Start the API image, fire 20 questions, and fail if memory exceeds the 512 MB free-tier budget.
 # Usage: scripts/container_check.sh <image> <reader-database-url>
 set -euo pipefail
 IMAGE="$1"

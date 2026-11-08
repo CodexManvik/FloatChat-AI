@@ -14,7 +14,7 @@ Database commands use ADMIN_DATABASE_URL (falling back to DATABASE_URL).
 import argparse
 import os
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -36,27 +36,39 @@ def _window_start() -> datetime:
     return _today() - timedelta(days=config.DATA_WINDOW_DAYS)
 
 
-def ingest(engine, kind: str, get_seed: Callable[[], pd.DataFrame], embedder, cache_path=None,
+def ingest(engine, kind: str, seeds: Callable[[], Iterable[pd.DataFrame]], embedder, cache_path=None,
            prune_before=None) -> dict:
-    """Run one recorded load: get the seed rows (fetch or file), load new profiles, prune old ones."""
+    """
+    Run one recorded load. `seeds` yields chunks of seed rows (from a fetch or a file); each chunk is saved as
+    soon as it arrives, so a failure part-way keeps the chunks already loaded and a rerun skips them.
+    """
     apply_schema(engine)
     run_id = start_run(engine, kind)
+    added = 0
     try:
-        seed = get_seed()
-        added = 0
-        if not seed.empty:
-            floats, profiles, measurements = build_tables(seed)
-            added = load_tables(engine, floats, profiles, measurements, embedder, cache_path)
+        for seed in seeds():
+            if not seed.empty:
+                floats, profiles, measurements = build_tables(seed)
+                added += load_tables(engine, floats, profiles, measurements, embedder, cache_path)
         removed = prune(engine, prune_before) if prune_before else 0
     except Exception:
         try:
-            finish_run(engine, run_id, "failed", 0, 0)
+            finish_run(engine, run_id, "failed", added, 0)
         except Exception as e:  # the database itself may be the problem
             print(f"Could not record the failed run: {e}", file=sys.stderr)
         raise
     finish_run(engine, run_id, "success", added, removed)
     print(f"{kind}: {added} profiles added, {removed} removed")
     return {"added": added, "removed": removed}
+
+
+def _fetched_chunks(start: datetime, end: datetime, chunk_days: int, fetch):
+    cursor = start
+    while cursor < end:
+        nxt = min(cursor + timedelta(days=chunk_days), end)
+        print(f"Fetching {cursor:%Y-%m-%d} -> {nxt:%Y-%m-%d}", flush=True)
+        yield to_seed(*fetch(cursor, nxt, config.BBOX))
+        cursor = nxt
 
 
 def run_snapshot(engine, embedder, path, cache_path=None, if_empty=False, reset=False) -> dict:
@@ -66,20 +78,20 @@ def run_snapshot(engine, embedder, path, cache_path=None, if_empty=False, reset=
     if if_empty and profile_count(engine) > 0:
         print("Data already loaded - skipping snapshot.")
         return {"added": 0, "removed": 0}
-    return ingest(engine, "snapshot", lambda: pd.read_csv(path), embedder, cache_path=cache_path)
+    return ingest(engine, "snapshot", lambda: [pd.read_csv(path)], embedder, cache_path=cache_path)
 
 
-def run_backfill(engine, embedder, start, end, reset=False, fetch=fetch_range) -> dict:
+def run_backfill(engine, embedder, start, end, reset=False, fetch=fetch_range, chunk_days=30) -> dict:
     if reset:
         reset_schema(engine)
-    return ingest(engine, "backfill", lambda: to_seed(*fetch(start, end, config.BBOX)), embedder,
+    return ingest(engine, "backfill", lambda: _fetched_chunks(start, end, chunk_days, fetch), embedder,
                   prune_before=_window_start())
 
 
 def run_refresh(engine, embedder, days=10, fetch=fetch_range) -> dict:
     end = _today() + timedelta(days=1)
     start = end - timedelta(days=days + 1)
-    return ingest(engine, "refresh", lambda: to_seed(*fetch(start, end, config.BBOX)), embedder,
+    return ingest(engine, "refresh", lambda: [to_seed(*fetch(start, end, config.BBOX))], embedder,
                   prune_before=_window_start())
 
 

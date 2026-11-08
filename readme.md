@@ -144,7 +144,7 @@ Interactive API docs are at `http://localhost:8000/docs` while the backend is ru
 | `Dockerfile.api`, `Dockerfile` | The API image (with the embedding model built in) and the Streamlit image. |
 | `docker-compose.yml` | Runs PostgreSQL + pgvector, the API (which loads the data on first start) and the frontend. |
 | `.github/workflows/` | `ci.yml` (lint, tests, container memory check), `refresh.yml` (daily data), `backfill.yml` (first load). |
-| `DEPLOY.md` | Step-by-step free deployment: Neon, Koyeb, GitHub Actions, cron-job.org and Groq. |
+| `DEPLOY.md` | Step-by-step free deployment: Neon, Render, GitHub Actions, cron-job.org and Groq. |
 | `tests/` | Unit tests, plus integration tests against a real Postgres + pgvector (`tests/integration`). |
 
 ### Repository layout
@@ -253,7 +253,7 @@ and lint with `ruff check .`.
 
 ### Deploying your own copy
 
-See [DEPLOY.md](DEPLOY.md): Neon (database), Koyeb (API), GitHub Actions (daily data),
+See [DEPLOY.md](DEPLOY.md): Neon (database), Render (API), GitHub Actions (daily data),
 cron-job.org (keep-awake) and Groq (LLM), all on free tiers.
 
 ### Troubleshooting
