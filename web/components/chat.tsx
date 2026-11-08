@@ -28,6 +28,7 @@ import {
 import { RateLimitedError, streamQuery } from "@/lib/sse";
 import type { ProfileMatch, QueryResult } from "@/lib/types";
 import { AnswerMarkdown } from "./answer-markdown";
+import { DownloadMenu } from "./download-menu";
 import { MiniMap } from "./mini-map";
 import { DataTable, ResultChart } from "./result-charts";
 import { RunLog, SqlBlock } from "./run-log";
@@ -108,6 +109,9 @@ function SemanticResult({ result }: { result: QueryResult }) {
   if (!profiles.length) return null;
   return (
     <div className="mt-5 grid gap-4 rounded-[var(--radius-card)] border border-line bg-surface p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:p-5">
+      <div className="md:col-span-2">
+        <DownloadMenu profileIds={profiles.map((p) => p.profile_id)} name="floatchat_profiles" note="these profiles" />
+      </div>
       <MiniMap
         points={profiles.map((p) => ({ lat: p.lat, lon: p.lon, label: `Float ${p.float_id}, ${p.date}` }))}
         label="Map of the matching profiles"

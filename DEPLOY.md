@@ -62,7 +62,7 @@ You create every account and paste every secret yourself. Nothing secret goes in
    | Branch | `main` |
    | Region | **Frankfurt (EU Central)** |
    | Instance type | **Free** |
-   | Dockerfile Path (Advanced) | `Dockerfile.api` (the default `./Dockerfile` builds the Streamlit app instead) |
+   | Dockerfile Path (Advanced) | `Dockerfile.api` |
    | Docker Build Context | `.` |
    | Health Check Path (Advanced) | `/ping` |
    | Auto-Deploy | On Commit |
@@ -140,7 +140,7 @@ without it, all visitors would share one rate limit.
    |---|---|
    | Repository | this repository |
    | Branch | `main` |
-   | Main file path | `app.py` |
+   | Main file path | `legacy/streamlit/app.py` |
    | App URL | a short name, e.g. `floatchat` |
 
 4. Open **Advanced settings**: choose Python **3.11** or newer, and paste into **Secrets**:
@@ -150,7 +150,7 @@ without it, all visitors would share one rate limit.
    FRONTEND_TOKEN = "<the same secret as on Render>"
    ```
 
-5. Click **Deploy**. Streamlit installs `requirements.txt` (frontend packages only) and starts the app in a few
+5. Click **Deploy**. Streamlit installs `legacy/streamlit/requirements.txt` (frontend packages only) and starts the app in a few
    minutes. The sidebar should show green dots for PostgreSQL, the vector index and the LLM.
 
 ## Troubleshooting

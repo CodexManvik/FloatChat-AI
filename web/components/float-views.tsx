@@ -8,6 +8,7 @@ import { sample } from "@/lib/colors";
 import { formatDate, parseDate } from "@/lib/format";
 import { latestProfile, latestProfileIds, VARIABLES, type Variable } from "@/lib/profiles";
 import type { Measurement, TrackPoint } from "@/lib/types";
+import { DownloadMenu } from "./download-menu";
 import { ProfileChart, SectionChart, TSDiagram } from "./float-charts";
 import { MiniMap } from "./mini-map";
 
@@ -129,11 +130,13 @@ export function FloatViews({ id, track }: { id: string; track: TrackPoint[] }) {
         </Panel>
         <section className="flex flex-col justify-between gap-6 rounded-[var(--radius-card)] border border-line bg-surface-2/50 p-5">
           <div>
-            <h2 className="text-base font-semibold tracking-tight">Compare with another float</h2>
+            <h2 className="text-base font-semibold tracking-tight">Take it further</h2>
             <p className="mt-1 max-w-[42ch] text-sm leading-relaxed text-ink-2">
-              Overlay two floats&apos; T-S diagrams and mean profiles to see how their water differs.
+              Download the measurements, or overlay another float&apos;s T-S diagram and mean profiles to see how their
+              water differs.
             </p>
           </div>
+          <DownloadMenu profileIds={latestProfileIds(track, 50)} name={`float_${id}`} note="its last 50 profiles" />
           <Link
             href={`/compare?floats=${id}`}
             className="inline-flex w-fit items-center gap-2 rounded-full border border-line-strong bg-surface px-4 py-2 text-sm font-medium transition-colors hover:border-accent"
