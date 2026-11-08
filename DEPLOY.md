@@ -94,6 +94,38 @@ You create every account and paste every secret yourself. Nothing secret goes in
 2. Render's free tier sleeps after 15 minutes without traffic and allows 750 instance hours a month, enough for one
    service running all month. `/ping` never touches the database, so Neon still suspends between real visits.
 
+## 5. Streamlit Community Cloud: the web app (interim UI)
+
+The Streamlit app (`app.py`) runs free on Streamlit Community Cloud and talks to the Render API. Streamlit's servers
+call the API for every visitor, so the app passes each visitor's IP along with a shared secret (`FRONTEND_TOKEN`);
+without it, all visitors would share one rate limit.
+
+1. Generate the shared secret:
+
+   ```bash
+   python -c "import secrets; print(secrets.token_urlsafe(32))"
+   ```
+
+2. In **Render → your service → Environment**, add `FRONTEND_TOKEN` with that value and save (Render redeploys).
+3. Sign in at **https://share.streamlit.io** with GitHub, click **Create app → Deploy a public app from GitHub**:
+
+   | Setting | Value |
+   |---|---|
+   | Repository | this repository |
+   | Branch | `main` |
+   | Main file path | `app.py` |
+   | App URL | a short name, e.g. `floatchat` |
+
+4. Open **Advanced settings**: choose Python **3.11** or newer, and paste into **Secrets**:
+
+   ```toml
+   BACKEND_URL = "https://<your-service>.onrender.com"
+   FRONTEND_TOKEN = "<the same secret as on Render>"
+   ```
+
+5. Click **Deploy**. Streamlit installs `requirements.txt` (frontend packages only) and starts the app in a few
+   minutes. The sidebar should show green dots for PostgreSQL, the vector index and the LLM.
+
 ## Troubleshooting
 
 | Symptom | Fix |
@@ -104,4 +136,6 @@ You create every account and paste every secret yourself. Nothing secret goes in
 | LLM shows *missing or invalid LLM_API_KEY* | Re-paste the Groq key in Render's environment variables (it redeploys automatically) |
 | The first request takes about a minute | The service went to sleep: check the cron-job.org job is enabled and succeeding |
 | Daily refresh failed | Usually ERDDAP being slow or down; the site keeps serving the previous data. Re-run the workflow later |
+| Streamlit app says it can't reach the API | Check `BACKEND_URL` in the app's **Settings → Secrets** (no trailing slash needed) and that the Render service is Live |
+| Streamlit visitors hit "Too many questions" quickly | `FRONTEND_TOKEN` must be identical in Render and in the Streamlit secrets |
 | Render's free tier changes | The API is a plain Docker image: any Docker host (Google Cloud Run, Hugging Face Spaces, Fly.io) works with the same environment variables |

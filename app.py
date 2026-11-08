@@ -99,14 +99,21 @@ st.markdown("""
 
 # ---------------------------------------------------------------- API access
 
+def visitor_headers() -> dict:
+    """Let the API rate-limit each visitor, not this server as a whole (needs the shared FRONTEND_TOKEN)."""
+    token = os.getenv("FRONTEND_TOKEN", "")
+    ip = getattr(st.context, "ip_address", None)
+    return {"X-Frontend-Token": token, "X-Visitor-IP": ip} if token and ip else {}
+
+
 def api_get(path: str, timeout: int = 15):
-    resp = requests.get(f"{API}{path}", timeout=timeout)
+    resp = requests.get(f"{API}{path}", timeout=timeout, headers=visitor_headers())
     resp.raise_for_status()
     return resp.json()
 
 
 def api_post(path: str, payload: dict, timeout: int = 120):
-    resp = requests.post(f"{API}{path}", json=payload, timeout=timeout)
+    resp = requests.post(f"{API}{path}", json=payload, timeout=timeout, headers=visitor_headers())
     resp.raise_for_status()
     return resp
 

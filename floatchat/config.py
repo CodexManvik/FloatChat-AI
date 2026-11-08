@@ -32,6 +32,8 @@ LLM_DAILY_BUDGET = int(os.getenv("LLM_DAILY_BUDGET", "2000"))
 # Public demo protection
 QUERY_LIMIT_PER_MINUTE = int(os.getenv("QUERY_LIMIT_PER_MINUTE", "10"))
 QUERY_LIMIT_PER_DAY = int(os.getenv("QUERY_LIMIT_PER_DAY", "100"))
+# Shared secret that lets a trusted server-side frontend (the Streamlit app) pass each visitor's IP for rate limiting
+FRONTEND_TOKEN = os.getenv("FRONTEND_TOKEN", "")
 ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8501").split(",")
