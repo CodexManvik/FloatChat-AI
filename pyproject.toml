@@ -1,7 +1,7 @@
 [tool.ruff]
 line-length = 120
 target-version = "py311"
-extend-exclude = ["legacy", "components", "styles", "utils", "tests/dashboard", "streamlit_app.py", "dashboard_config.py", "app.py"]
+extend-exclude = ["legacy", "web"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B"]

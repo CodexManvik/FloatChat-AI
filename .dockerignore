@@ -10,6 +10,4 @@ chroma_db
 legacy
 tests
 docs
-components
-styles
-utils
+web

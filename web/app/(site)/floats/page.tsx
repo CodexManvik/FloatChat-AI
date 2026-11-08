@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { FloatIndex } from "@/components/float-index";
 import { getFloats } from "@/lib/api";
 
@@ -10,6 +11,7 @@ export const metadata: Metadata = {
 
 export default async function FloatsPage() {
   const floats = await getFloats().catch(() => []);
+  if (!floats.length) await connection(); // render per request when prerendering couldn't reach the API
   return (
     <div className="mx-auto max-w-[1240px] px-4 pb-20 pt-10 sm:px-6">
       <h1 className="text-4xl font-semibold tracking-tighter md:text-5xl">Floats</h1>

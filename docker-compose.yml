@@ -1,5 +1,5 @@
 # One-command local stack: docker compose up --build
-# App: http://localhost:8501   API docs: http://localhost:8000/docs
+# Web app: http://localhost:3000   API docs: http://localhost:8000/docs
 services:
   db:
     image: pgvector/pgvector:pg16
@@ -32,7 +32,7 @@ services:
       ADMIN_DATABASE_URL: postgresql+psycopg://floatchat:floatchat@db:5432/argo
       DATABASE_URL: postgresql+psycopg://floatchat_reader:local-reader-password@db:5432/argo
       READER_PASSWORD: local-reader-password
-      ALLOWED_ORIGINS: http://localhost:8501,http://localhost:3000
+      ALLOWED_ORIGINS: http://localhost:3000
     ports:
       - "8000:8000"
     extra_hosts:
@@ -41,12 +41,15 @@ services:
       db:
         condition: service_healthy
 
-  frontend:
-    build: .
+  web:
+    build:
+      context: ./web
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000   # what your browser uses
     environment:
-      BACKEND_URL: http://backend:8000
+      API_URL_INTERNAL: http://backend:8000          # what the web server uses inside Docker
     ports:
-      - "8501:8501"
+      - "3000:3000"
     depends_on:
       - backend
 
