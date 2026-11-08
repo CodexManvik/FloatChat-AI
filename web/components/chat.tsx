@@ -326,7 +326,7 @@ export function Chat({ initialQuestion, coverage }: { initialQuestion?: string; 
   useEffect(() => {
     if (initialQuestion && !started.current) {
       started.current = true;
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- asking the question from the link once
+      // Ask the question from the link once
       ask(initialQuestion);
     }
   }, [initialQuestion, ask]);

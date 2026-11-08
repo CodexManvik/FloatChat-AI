@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { loadLand } from "@/lib/land";
 import { PlotFigure } from "./plot-figure";
 
-export type MapPoint = { lat: number; lon: number; label: string; color?: string };
+export type MapPoint = { lat: number; lon: number; label: string; color?: string; group?: string };
 
 /** A small equirectangular map fitted around the points, with land outlines. */
 export function MiniMap({
@@ -30,15 +30,12 @@ export function MiniMap({
       if (!land || !points.length) return null;
       const lats = points.map((p) => p.lat);
       const lons = points.map((p) => p.lon);
-      const pad = 6;
-      const box = {
-        type: "Polygon" as const,
-        coordinates: [[
-          [Math.min(...lons) - pad, Math.min(...lats) - pad], [Math.max(...lons) + pad, Math.min(...lats) - pad],
-          [Math.max(...lons) + pad, Math.max(...lats) + pad], [Math.min(...lons) - pad, Math.max(...lats) + pad],
-          [Math.min(...lons) - pad, Math.min(...lats) - pad],
-        ]],
-      };
+      // Pad by a quarter of the spread (at least 2 degrees) so small trajectories fill the map
+      const pad = Math.max(2, 0.25 * Math.max(Math.max(...lons) - Math.min(...lons), Math.max(...lats) - Math.min(...lats)));
+      const [w, e] = [Math.min(...lons) - pad, Math.max(...lons) + pad];
+      const [s, n] = [Math.max(-89, Math.min(...lats) - pad), Math.min(89, Math.max(...lats) + pad)];
+      // d3 reads polygons on the sphere: the ring must run clockwise or it means "everything but the box"
+      const box = { type: "Polygon" as const, coordinates: [[[w, s], [w, n], [e, n], [e, s], [w, s]]] };
       return Plot.plot({
         width,
         height,
@@ -47,7 +44,9 @@ export function MiniMap({
           Plot.frame({ fill: "var(--water)", stroke: "var(--line)", rx: 10 }),
           Plot.geo(land, { fill: "var(--land)" }),
           Plot.graticule({ stroke: "var(--graticule)", strokeOpacity: 1 }),
-          line ? Plot.line(points, { x: "lon", y: "lat", stroke: "var(--text-2)", strokeWidth: 1, strokeOpacity: 0.6, curve: "linear" }) : null,
+          line
+            ? Plot.line(points, { x: "lon", y: "lat", z: (d: MapPoint) => d.group ?? "", stroke: "var(--text-2)", strokeWidth: 1, strokeOpacity: 0.6, curve: "linear" })
+            : null,
           Plot.dot(points, {
             x: "lon",
             y: "lat",
