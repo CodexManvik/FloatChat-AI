@@ -22,9 +22,10 @@ INTENT_HELP = {
     "regional_comparison": "compare the regions (upper 100 m)",
     "depth_ranges": "averages by depth layer (surface, intermediate, deep)",
     "temporal_trends": "monthly averages over time",
-    "float_summary": "statistics per float, most active floats",
+    "float_summary": "a table with one row per float (its profile count, averages, depth), e.g. most active floats",
     "bgc_analysis": "oxygen, chlorophyll, nitrate or pH by ocean zone",
-    "custom": "any other statistical question that needs its own SQL",
+    "custom": "any other statistical question that needs its own SQL, including a single number such as a count, "
+              "total, maximum or minimum (e.g. 'how many profiles…', 'what was the highest temperature…')",
 }
 
 
