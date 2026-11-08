@@ -1,7 +1,7 @@
 """
 Ask a deployed FloatChat API five real questions and report answers and timings.
 
-    python scripts/smoke_test.py https://floatchat-api-<name>.koyeb.app
+    python scripts/smoke_test.py https://<your-service>.onrender.com
 """
 
 import sys

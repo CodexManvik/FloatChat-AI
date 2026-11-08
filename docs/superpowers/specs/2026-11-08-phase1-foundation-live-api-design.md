@@ -1,7 +1,12 @@
 # Phase 1: Foundation & live API (design)
 
 **Date:** 2026-11-08
-**Status:** approved in brainstorming, awaiting spec review
+**Status:** implemented (PR #4); deployment in progress
+
+> **Hosting change during deployment (2026-11-08):** Koyeb closed its free tier to new sign-ups after being
+> acquired by Mistral AI, so the API runs on **Render's free web service** instead (same Docker image, 512 MB /
+> 0.1 CPU, sleeps after 15 min idle, 750 free hours a month). The keep-awake ping runs every **10 minutes**.
+> Everything else in this spec is unchanged; Koyeb-specific details below are kept as written at design time.
 
 ## Context: the overall plan
 
@@ -223,7 +228,7 @@ Phase 4.
 | Risk | Mitigation |
 |---|---|
 | 0.1 vCPU makes queries slow | Dynamic padding (short questions embed in milliseconds); no heavy work on the server; caching; measure in the container check |
-| Koyeb free-tier terms change (acquired by Mistral AI in 2026) | The API is a plain Docker image; moving to Render free or a paid host is a config change, documented in `DEPLOY.md` |
+| Koyeb free-tier terms change (acquired by Mistral AI in 2026) | **Happened:** new sign-ups lost the free tier, so the API moved to Render free (see the note at the top). The image needed no changes |
 | ERDDAP slow or down | Retries; the daily job fails visibly; the site serves the last good data |
 | Neon compute-hour cap (100 CU-hours/month) | The keep-awake ping uses `/ping`, which never touches the database, so Neon only runs during real visits and data jobs. Check usage after the first week |
 | Neon cold start (~1 s after auto-suspend) | Acceptable for a first question; the answer cache and Neon's warm period cover follow-ups |
