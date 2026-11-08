@@ -90,7 +90,7 @@ def create_app(engine=None, get_embedder_fn=get_embedder, chat_fn=llm.chat, quer
     async def rate_limit(request: Request, call_next):
         if request.method != "OPTIONS" and request.url.path not in UNLIMITED_PATHS:
             limiter = query_limiter if request.url.path == "/query" else other_limiter
-            allowed, message = limiter.check(client_ip(request))
+            allowed, message = limiter.check(client_ip(request, config.FRONTEND_TOKEN))
             if not allowed:
                 return JSONResponse(status_code=429, content={"error": "rate_limited", "message": message})
         return await call_next(request)

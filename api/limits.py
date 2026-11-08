@@ -9,8 +9,20 @@ def _utc_day(timestamp: float) -> int:
     return int(timestamp // 86_400)
 
 
-def client_ip(request) -> str:
-    forwarded = request.headers.get("x-forwarded-for", "")
+def client_ip(request, frontend_token: str = "") -> str:
+    """
+    The visitor's IP, for rate limiting. Render sits behind Cloudflare, which sets CF-Connecting-IP itself, so
+    clients can't fake it; X-Forwarded-For keeps whatever the client sent and is only a fallback. A trusted
+    server-side frontend (the Streamlit app) may pass its visitor's IP in X-Visitor-IP along with the shared token.
+    """
+    headers = request.headers
+    visitor = headers.get("x-visitor-ip", "").strip()
+    if frontend_token and visitor and headers.get("x-frontend-token", "") == frontend_token:
+        return visitor
+    cloudflare = headers.get("cf-connecting-ip", "").strip()
+    if cloudflare:
+        return cloudflare
+    forwarded = headers.get("x-forwarded-for", "")
     if forwarded:
         return forwarded.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
