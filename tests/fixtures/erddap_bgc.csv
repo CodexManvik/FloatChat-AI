@@ -1,0 +1,6 @@
+platform_number,cycle_number,time,latitude,longitude,pres,doxy_adjusted,chla_adjusted,nitrate_adjusted,ph_in_situ_total_adjusted,doxy_adjusted_qc,chla_adjusted_qc,nitrate_adjusted_qc,ph_in_situ_total_adjusted_qc
+,,UTC,degrees_north,degrees_east,decibar,micromole/kg,mg/m3,micromole/kg,dimensionless,,,,
+2902203,45,2024-02-11T05:00:00Z,12.3,65.2,4.0,200.0,0.30,NaN,8.05,1,1,,1
+2902203,45,2024-02-11T05:00:00Z,12.3,65.2,50.0,150.0,0.80,NaN,8.00,1,1,,1
+2902203,45,2024-02-11T05:00:00Z,12.3,65.2,200.0,20.0,0.05,NaN,7.90,1,3,,1
+2902203,45,2024-02-11T05:00:00Z,12.3,65.2,1000.0,2.0,NaN,NaN,7.80,1,,,1

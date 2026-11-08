@@ -1,0 +1,13 @@
+fastapi==0.161.1
+uvicorn[standard]==0.54.0
+pydantic>=2.5
+SQLAlchemy==2.1.6
+psycopg[binary]==3.3.6
+numpy==2.4.6
+pandas==3.1.0
+onnxruntime==1.31.0
+tokenizers==0.23.3
+xarray==2026.9.0
+netCDF4==1.7.5
+requests==2.34.2
+python-dotenv==1.2.4

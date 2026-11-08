@@ -1,0 +1,16 @@
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["legacy", "components", "styles", "utils", "tests/dashboard", "streamlit_app.py", "dashboard_config.py", "app.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+ignore = ["E501", "B905"]  # zip() over columns of the same frame is always equal-length
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit", "tests/integration"]
+pythonpath = ["."]
+markers = [
+    "integration: needs PostgreSQL + pgvector (TEST_ADMIN_DATABASE_URL)",
+    "model: downloads the ~80 MB embedding model",
+]

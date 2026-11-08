@@ -1,8 +1,9 @@
 """
 FloatChat - AI-powered ARGO ocean data explorer (Streamlit frontend)
-Talks to the FastAPI backend in main.py.
+Talks to the FastAPI backend in api/main.py.
 """
 
+import os
 import time
 
 import pandas as pd
@@ -10,9 +11,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 import requests
 import streamlit as st
+from dotenv import load_dotenv
 from plotly.subplots import make_subplots
 
-import config
+load_dotenv()
 
 st.set_page_config(
     page_title="FloatChat - ARGO Data Explorer",
@@ -21,7 +23,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-API = config.BACKEND_URL.rstrip("/")
+API = os.getenv("BACKEND_URL", "http://127.0.0.1:8000").rstrip("/")
 MAP_CENTER = {"lat": -8, "lon": 75}
 TEMP_SCALE = "Turbo"
 MAP_CONFIG = {"scrollZoom": False}  # keep the mouse wheel for page scrolling
@@ -294,7 +296,7 @@ def render_sidebar():
             row(False, "API offline", API)
         else:
             row(health["database"] == "connected", "PostgreSQL", f"{health['measurements']:,} measurements")
-            row(health["chromadb"] == "connected", "Vector index", f"{health['indexed_profiles']:,} profiles")
+            row(health["vector_index"] == "ready", "Vector index", f"{health['indexed_profiles']:,} profiles")
             llm_info = health["llm"]
             if not llm_info["configured"]:
                 row(None, "LLM", "not configured (data-only answers)")
@@ -386,7 +388,7 @@ def render_overview():
          "Questions like <i>\"average temperature at different depths\"</i> become SQL that runs on PostgreSQL. "
          "Common patterns use vetted templates; anything else is written by the LLM and checked to be read-only."),
         ("🔎 Descriptive questions → RAG",
-         "Every profile is summarised in words and embedded into ChromaDB. FloatChat finds the closest matches, "
+         "Every profile is summarised in words and embedded with pgvector. FloatChat finds the closest matches, "
          "narrowed by any region or month you mention, and the LLM answers from them."),
         ("📈 Visualize & export",
          "Each answer comes with maps, depth profiles or charts, and the underlying data can be downloaded "
@@ -533,7 +535,7 @@ def main():
     <div class="footer">
         FloatChat · data: <a href="https://argo.ucsd.edu/" target="_blank">Argo Program</a> via
         <a href="https://erddap.ifremer.fr/erddap/" target="_blank">Ifremer ERDDAP</a> ·
-        built with FastAPI, PostgreSQL, ChromaDB and Streamlit
+        built with FastAPI, PostgreSQL + pgvector and Streamlit
     </div>
     """, unsafe_allow_html=True)
 

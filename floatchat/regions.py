@@ -1,6 +1,7 @@
 """
-Named ocean regions used to label profiles and to understand region names in
-user questions. Boxes are approximate and cover the Indian Ocean seed data.
+Named ocean regions used to label profiles and to understand region names,
+dates and sensor types in user questions. Boxes are approximate and cover
+the Indian Ocean data.
 """
 
 import re
@@ -17,6 +18,14 @@ REGIONS = [
 
 MONTHS = ["january", "february", "march", "april", "may", "june", "july",
           "august", "september", "october", "november", "december"]
+
+# Question words that mean "only profiles from floats with this sensor"
+SENSOR_PATTERNS = {
+    "has_oxygen": r"\b(oxygen|o2|bgc|biogeochemical)\b",
+    "has_chlorophyll": r"\b(chlorophyll|chl|chla|phytoplankton)\b",
+    "has_nitrate": r"\b(nitrate|nutrients?)\b",
+    "has_ph": r"\b(ph|acidity|acidification)\b",
+}
 
 
 def region_for(lat: float, lon: float) -> str:
@@ -36,7 +45,7 @@ def region_for(lat: float, lon: float) -> str:
 
 
 def parse_filters(question: str) -> dict:
-    """Extract region / month / year filters mentioned in a question."""
+    """Extract region / month / year / sensor filters mentioned in a question."""
     q = question.lower()
     filters = {}
     for name, keywords in REGIONS:
@@ -47,8 +56,9 @@ def parse_filters(question: str) -> dict:
         if re.search(rf"\b{month}\b|\b{month[:3]}\b", q):
             filters["month_num"] = i
             break
-    if re.search(r"\b(oxygen|o2|bgc|biogeochemical)\b", q):
-        filters["has_oxygen"] = True
+    for key, pattern in SENSOR_PATTERNS.items():
+        if re.search(pattern, q):
+            filters[key] = True
     year = re.search(r"\b(20\d{2})\b", q)
     if year:
         filters["year"] = int(year.group(1))

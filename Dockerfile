@@ -3,13 +3,11 @@ FROM python:3.11-slim
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 
-COPY requirements.txt .
-RUN pip install -r requirements.txt
+COPY requirements-frontend.txt .
+RUN pip install -r requirements-frontend.txt
 
-# Bake the ChromaDB embedding model (~80 MB) into the image so first start is fast
-RUN python -c "from chromadb.utils import embedding_functions as ef; ef.DefaultEmbeddingFunction()(['warm up'])"
+COPY app.py .
+COPY .streamlit/ .streamlit/
 
-COPY . .
-
-EXPOSE 8000 8501
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+EXPOSE 8501
+CMD ["streamlit", "run", "app.py", "--server.port", "8501", "--server.address", "0.0.0.0"]

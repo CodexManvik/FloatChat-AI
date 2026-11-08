@@ -8,7 +8,7 @@ import logging
 
 import requests
 
-import config
+from floatchat import config
 
 logger = logging.getLogger(__name__)
 
