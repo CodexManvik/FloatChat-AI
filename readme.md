@@ -55,8 +55,10 @@ becoming data engineers.
 The repo ships with **real Argo observations** from the **Indian Ocean, January–March 2024**, downloaded from the
 [Ifremer ERDDAP](https://erddap.ifremer.fr/erddap/) server:
 
-- **438 floats**, **3,891 profiles**, **88,541 measurements** from the surface down to 2,000 m
-- **61 BGC floats** with dissolved-oxygen data, which show the Arabian Sea's oxygen minimum zone clearly
+- **437 floats**, **3,898 profiles**, **88,361 measurements** from the surface down to 2,000 m, keeping only values
+  that passed Argo's quality control
+- **Biogeochemical (BGC) floats** that also measure dissolved oxygen (52 floats), chlorophyll (57), nitrate (32)
+  and pH (18). The oxygen data shows the Arabian Sea's oxygen minimum zone clearly.
 - Each profile is labelled with a region: Arabian Sea, Bay of Bengal, Equatorial, Southern and Eastern Indian Ocean,
   Red Sea & Gulf of Aden
 
@@ -67,61 +69,64 @@ You can download a different period or ocean region with one command (see [Using
 ## 🏗️ How it's built
 
 ```
-                       ┌────────────────────────── backend (FastAPI, main.py) ───────────────────────────┐
- ┌─────────────┐  HTTP │                                                                                 │
- │  Streamlit  │ ────► │  POST /query ─► is it statistical?                                              │
- │  frontend   │       │                  ├─ yes ─► nl_to_sql.py: template or LLM-written SQL ─► PostgreSQL
- │  (app.py)   │ ◄──── │                  └─ no ──► ChromaDB vector search (+ region/month/oxygen filters)│
- └─────────────┘  JSON │                              └─► llm.py: LLM writes the answer from the matches │
-                       │  /stats /floats /get_profiles /export … ─────────────────────────► PostgreSQL   │
-                       └─────────────────────────────────────────────────────────────────────────────────┘
-                                ▲
-     scripts/fetch_argo_data.py ─► data/argo_profiles.csv.gz ─► ingest.py ─► PostgreSQL + ChromaDB
+ ┌─────────────┐  HTTP  ┌──────────────── API (FastAPI) ───────────────────────────────┐
+ │  Streamlit  │ ─────► │ POST /query ─► statistical? ─ yes ─► SQL agent ─► Postgres      │
+ │  (app.py)   │ ◄───── │                └─ no ─► pgvector search (+ filters)             │
+ └─────────────┘  JSON  │                         └─► LLM (e.g. Groq) writes the answer   │
+                        │ rate limits · LLM budget · answer cache · query log             │
+                        └──────────────────────────────▲──────────────────────────────────┘
+                                                       │ read-only role
+   GitHub Actions (daily) ─► ERDDAP ─► pipeline ─► PostgreSQL + pgvector
 ```
 
-### 1. Data pipeline: getting the ocean data in
+### 1. Data pipeline: getting the ocean data in (`pipeline/`)
 
 | Component | What it does |
 |---|---|
-| `scripts/fetch_argo_data.py` | Downloads Argo profiles for a date range and region from ERDDAP, in 5-day chunks. Core floats provide temperature and salinity; the BGC dataset adds dissolved oxygen. Each profile is interpolated onto 24 standard pressure levels (5–2,000 dbar) so the dataset stays small. The result is saved as `data/argo_profiles.csv.gz`. |
-| `data/argo_profiles.csv.gz` | The bundled seed dataset (0.9 MB). Nothing extra needs downloading. |
-| `ingest.py` | Turns the seed file into a database. It creates the PostgreSQL tables, writes one sentence-style description per profile (*"Float 2902203, cycle 45, 11 Feb 2024, 12.3°N 65.2°E in the Arabian Sea, surface 28.1 °C…"*), embeds those descriptions and stores them in ChromaDB. `--if-empty` skips everything if the data is already loaded. |
-| `data/profile_embeddings.npz` | Precomputed embeddings for the bundled profiles. Embedding about 4,000 descriptions on a CPU takes ~5 minutes; with this cache a fresh install is ready in ~30 seconds. Profiles whose descriptions change are re-embedded automatically. |
-| `ocean_regions.py` | Defines the named regions. It labels each profile with its region, and spots region names, months, years and oxygen terms in your questions so they can be used as search filters. |
+| `pipeline/erddap.py` | Downloads profiles from Ifremer ERDDAP in 5-day windows with retries: temperature and salinity from core floats; oxygen, chlorophyll, nitrate and pH from BGC floats. Keeps only quality-controlled values (Argo QC flags 1–2). |
+| `pipeline/shape.py` | Interpolates every profile onto 24 standard depths (5–2,000 m), labels its region and notes which sensors it has. A variable is only interpolated inside the depth range where it was measured. |
+| `pipeline/describe.py` | Writes a plain-English description of each profile (*"Float 2902203, cycle 45, 11 February 2024, 12.30°N 65.20°E in the Arabian Sea… the oxygen minimum was 2.0 µmol/kg at 1000 m"*). These sentences are what search runs on. |
+| `pipeline/load.py` | Inserts only new profiles (bulk `COPY`), embeds their descriptions, removes data older than 12 months, and records every run in `ingest_runs`. |
+| `python -m pipeline …` | `backfill` (last 12 months), `refresh` (last 10 days; GitHub Actions runs it daily), `snapshot` (the bundled offline data), `fetch` (download a range to a file), `create-reader` (the API's database role). |
+| `data/` | A bundled 3-month snapshot plus precomputed embeddings, so local setup needs no network and is ready in about 30 seconds. |
 
-### 2. Storage
+### 2. Storage: one PostgreSQL database with pgvector
 
-- **PostgreSQL** holds the numbers, in three tables:
-  - `floats`: one row per float (WMO ID, first/last position and date)
-  - `profiles`: one row per dive cycle (float, cycle number, date, position, region, number of levels)
-  - `measurements`: one row per depth level (pressure/depth, temperature, salinity, oxygen)
-- **ChromaDB** holds the vector index: one embedded text description per profile, plus metadata (float, date, month,
-  region, position, whether it measures oxygen) used for filtering.
+- `floats`, `profiles`, `measurements` hold the data. Each profile row also stores its description and a
+  384-number embedding, so search is a single SQL query combining filters (region, month, sensors) with vector
+  similarity.
+- `ingest_runs` records every data load; `query_log` records questions asked (no personal data).
+- The API connects as **`floatchat_reader`**: it can only read data and append to `query_log`, and every statement is
+  stopped after 5 seconds. Even an LLM-written query can't change anything.
 
-### 3. Backend: the FastAPI service (`main.py`)
+### 3. Core logic (`floatchat/`)
+
+| Component | What it does |
+|---|---|
+| `floatchat/sql_agent.py` | Decides whether a question is statistical, and which kind (by depth, by region, by depth layer, monthly trend, per float, biogeochemistry). Known kinds run hand-written SQL templates; other statistical questions get LLM-written SQL, which must pass a read-only check before it runs. |
+| `floatchat/search.py` | pgvector similarity search with region, month, year and sensor filters. |
+| `floatchat/answer.py` | Turns SQL rows or matching profiles into the answer, with an LLM explanation when one is available. |
+| `floatchat/embedder.py` | The all-MiniLM-L6-v2 embedding model (ONNX). Each batch is padded only to its longest text, so a question embeds in a few milliseconds. |
+| `floatchat/llm.py` | A small client for any **OpenAI-compatible** chat API (Groq, OpenAI, Ollama, LM Studio, …). Without an LLM, FloatChat answers from the data alone. |
+| `floatchat/regions.py`, `exports.py`, `config.py`, `db/` | Region boxes and question filters; CSV/NetCDF/ASCII exports; settings; schema, roles and read queries. |
+
+### 4. API (`api/`)
 
 | Endpoint | Purpose |
 |---|---|
 | `POST /query` | The main endpoint. It takes a question and returns the answer text, the query type (`analytical` or `semantic`), the SQL rows or matching profiles, and the context used. |
-| `GET /stats` | Dataset totals, date range and profiles per region (the overview tiles). |
+| `GET /stats` | Dataset totals, sensors, date range, last update and profiles per region. |
 | `GET /floats` | Each float's latest position and surface readings (the overview map). |
 | `POST /get_profiles` | All depth levels for the requested profiles (the profile plots). |
 | `GET /profiles/float/{id}`, `GET /float/{id}` | One float's trajectory and summary (the float explorer). |
-| `POST /export` | Profiles as CSV, NetCDF or ASCII. |
-| `GET /health` | Status of the database, vector index and LLM. |
+| `POST /export` | Up to 50 profiles as CSV, NetCDF or ASCII. |
+| `GET /health`, `GET /ping` | Status of the database, vector index and LLM; a database-free keep-awake check. |
 
+Because the demo is public, the API limits each visitor to 10 questions a minute and 100 a day, caps LLM calls per
+day (falling back to data-only answers when the budget runs out), and caches answers until new data arrives.
 Interactive API docs are at `http://localhost:8000/docs` while the backend is running.
 
-Supporting modules:
-
-| Component | What it does |
-|---|---|
-| `nl_to_sql.py` | Decides whether a question is statistical, and which kind (by depth, by region, by depth layer, monthly trend, per float, oxygen). Known kinds run hand-written SQL templates. Other statistical questions go to the LLM, which writes the SQL. Before anything runs, the SQL is checked to be a single read-only `SELECT`. |
-| `llm.py` | A small client for any **OpenAI-compatible** chat API: Groq, OpenAI, Ollama, LM Studio, vLLM and others. When no LLM is configured, or the call fails, FloatChat falls back to answers built directly from the data, so the app still works. |
-| `export_utils.py` | Builds the CSV, NetCDF (CF-style attributes) and ASCII exports. |
-| `config.py` | Reads all settings from environment variables / `.env`. |
-
-### 4. Frontend: the Streamlit app (`app.py`)
+### 5. Frontend: the Streamlit app (`app.py`)
 
 - **Overview page:** headline numbers, a live map of every float coloured by surface temperature, profiles per
   region, and a **float explorer**. Click any float on the map to see its trajectory and latest depth profiles.
@@ -132,33 +137,29 @@ Supporting modules:
   - download buttons
 - The sidebar shows whether the database, vector index and LLM are connected.
 
-### 5. Packaging & deployment
+### 6. Packaging, deployment and tests
 
 | Component | What it does |
 |---|---|
-| `Dockerfile` | One image for backend and frontend, with the embedding model pre-downloaded. |
-| `docker-compose.yml` | Runs PostgreSQL, the backend (which loads the data on first start) and the frontend. |
-| `render.yaml` | Blueprint for deploying to [Render](https://render.com). |
-| `.env.example` | Every setting, with examples for Groq, Ollama, LM Studio and OpenAI. |
-| `tests/test_floatchat_core.py` | Tests for region parsing, question routing and the SQL safety check. |
+| `Dockerfile.api`, `Dockerfile` | The API image (with the embedding model built in) and the Streamlit image. |
+| `docker-compose.yml` | Runs PostgreSQL + pgvector, the API (which loads the data on first start) and the frontend. |
+| `.github/workflows/` | `ci.yml` (lint, tests, container memory check), `refresh.yml` (daily data), `backfill.yml` (first load). |
+| `DEPLOY.md` | Step-by-step free deployment: Neon, Koyeb, GitHub Actions, cron-job.org and Groq. |
+| `tests/` | Unit tests, plus integration tests against a real Postgres + pgvector (`tests/integration`). |
 
 ### Repository layout
 
 ```
 FloatChat-AI/
-├── app.py                  # Streamlit frontend (the demo)
-├── main.py                 # FastAPI backend
-├── nl_to_sql.py            # question routing + SQL templates + SQL safety
-├── llm.py                  # OpenAI-compatible LLM client (Groq, Ollama, …)
-├── ingest.py               # loads data into PostgreSQL + ChromaDB
-├── ocean_regions.py        # region labels + question filters
-├── export_utils.py         # CSV / NetCDF / ASCII export
-├── config.py               # settings from .env
-├── scripts/fetch_argo_data.py
-├── data/                   # bundled Argo data + embedding cache
-├── docs/screenshots/
-├── tests/
-├── Dockerfile, docker-compose.yml, render.yaml, requirements.txt, .env.example
+├── app.py                  # Streamlit frontend
+├── api/                    # FastAPI app: endpoints, rate limits, caches
+├── floatchat/              # core: SQL agent, search, answers, embedder, LLM client, database
+├── pipeline/               # ERDDAP → standard depths → descriptions/embeddings → Postgres
+├── scripts/                # smoke test, container memory check
+├── data/                   # bundled Argo snapshot + embedding cache
+├── tests/                  # unit/ and integration/
+├── docs/                   # screenshots, design specs and plans
+├── Dockerfile.api, Dockerfile, docker-compose.yml, requirements*.txt, .env.example, DEPLOY.md
 ├── streamlit_app.py, components/, styles/, utils/   # experimental dashboard (WIP, see README_DASHBOARD.md)
 └── legacy/                 # early prototype scripts, kept for reference
 ```
@@ -231,21 +232,29 @@ amber if no LLM is configured.
 
 ### Option B: without Docker (for development)
 
-You need Python 3.11+ and PostgreSQL. The easiest way to get PostgreSQL is `docker compose up -d db`, which listens
-on port 5433 and matches the default `DATABASE_URL`.
+You need Python 3.11+ and PostgreSQL with the pgvector extension. The easiest way is `docker compose up -d db`,
+which listens on port 5433 and matches the settings in `.env.example`.
 
 ```bash
 python -m venv .venv
-.venv\Scripts\activate             # macOS/Linux: source .venv/bin/activate
+.venv\Scripts\activate                 # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env               # add your LLM key, or point DATABASE_URL at your own PostgreSQL
+cp .env.example .env                   # add your LLM key if you have one
+docker compose up -d db                # PostgreSQL + pgvector on port 5433
 
-python ingest.py                   # load data into PostgreSQL + build the vector index (~30 s)
-uvicorn main:app --port 8000       # terminal 1: backend
-streamlit run app.py               # terminal 2: frontend → http://localhost:8501
+python -m pipeline snapshot            # load the bundled data (~30 s)
+python -m pipeline create-reader       # the API's read-only role (password from READER_PASSWORD)
+uvicorn api.main:app --port 8000       # terminal 1: API
+streamlit run app.py                   # terminal 2: frontend → http://localhost:8501
 ```
 
-Run the tests with `python -m pytest tests/test_floatchat_core.py`.
+Run the tests with `pytest` (integration tests use the `db` container and are skipped if it isn't running),
+and lint with `ruff check .`.
+
+### Deploying your own copy
+
+See [DEPLOY.md](DEPLOY.md): Neon (database), Koyeb (API), GitHub Actions (daily data),
+cron-job.org (keep-awake) and Groq (LLM), all on free tiers.
 
 ### Troubleshooting
 
@@ -283,22 +292,22 @@ Tips:
 ### Using other data
 
 ```bash
-python scripts/fetch_argo_data.py --start 2024-06-01 --end 2024-09-01 --bbox=-40,30,30,120
-python ingest.py
+python -m pipeline fetch --start 2024-06-01 --end 2024-09-01 --out data/argo_profiles.csv.gz
+python -m pipeline snapshot --reset
 ```
 
-`--bbox` is `lat_min,lat_max,lon_min,lon_max`. New data needs new embeddings, which takes a few minutes on a CPU;
-after that the cache is updated. If you fetch another ocean basin, update the region boxes in `ocean_regions.py`.
+To keep a database continuously up to date instead, use `python -m pipeline backfill` once and
+`python -m pipeline refresh` daily (the GitHub Actions workflows do exactly this; see [DEPLOY.md](DEPLOY.md)).
+New data needs new embeddings, which takes a few minutes on a CPU. The region filter covers the Indian Ocean
+(`BBOX` in `floatchat/config.py`); for another basin, change it and the region boxes in `floatchat/regions.py`.
 
 ---
 
 ## 🗺️ Limitations & roadmap
 
-- The data is a three-month Indian Ocean snapshot, not a live feed. Next step: scheduled ingestion of recent profiles.
+- The bundled local data is a three-month snapshot; the deployed version keeps a rolling 12 months, refreshed daily.
 - Deciding between SQL and search uses keywords; an LLM-based router would understand more phrasings.
 - Region boundaries are approximate boxes.
-- Only temperature, salinity and oxygen are loaded. BGC floats also measure pH, chlorophyll and nitrate, which could
-  be added to `fetch_argo_data.py`.
 - `streamlit_app.py` and `components/` are an experimental, feature-heavy dashboard that still uses mock data in
   places. They are not part of the demo (see `README_DASHBOARD.md`).
 - `legacy/` holds early prototype scripts that are no longer used.
