@@ -2,7 +2,7 @@ import Link from "next/link";
 import { GithubLogo } from "@phosphor-icons/react/dist/ssr";
 import { REPO_URL } from "@/lib/config";
 import { Logo } from "./logo";
-import { NavLinks } from "./nav-links";
+import { MobileMenu, NavLinks } from "./nav-links";
 import { ThemeToggle } from "./theme-toggle";
 
 export function SiteHeader() {
@@ -29,6 +29,7 @@ export function SiteHeader() {
           >
             Ask a question
           </Link>
+          <MobileMenu />
         </div>
       </div>
     </header>

@@ -238,10 +238,10 @@ export function Globe({ floats }: { floats: FloatPoint[] }) {
           </div>
         )}
       </div>
-      <figcaption className="mt-3 flex items-center justify-center gap-3 text-xs text-ink-2">
+      <figcaption className="mt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 whitespace-nowrap text-xs text-ink-2">
         <span className="tabular font-mono">{domain[0]} °C</span>
         <span
-          className="h-1.5 w-40 rounded-full"
+          className="h-1.5 w-24 rounded-full sm:w-40"
           style={{ background: `linear-gradient(90deg, ${CMOCEAN.thermal.slice(1).join(",")})` }}
           aria-hidden
         />

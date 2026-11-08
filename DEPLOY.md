@@ -9,6 +9,7 @@ FloatChat's live demo runs entirely on free tiers:
 | Keep-awake ping | [cron-job.org](https://cron-job.org) | calls `/ping` every 10 min so Render never sleeps |
 | Data loading | GitHub Actions | backfill once, refresh daily at 02:00 UTC |
 | LLM | [Groq](https://console.groq.com) | free API key |
+| Web app (Next.js) | [Vercel](https://vercel.com) Hobby plan | static pages from a global CDN; the browser streams answers straight from the API |
 
 You create every account and paste every secret yourself. Nothing secret goes in the repo.
 
@@ -75,7 +76,7 @@ You create every account and paste every secret yourself. Nothing secret goes in
    | `LLM_MODEL` | a current Groq chat model (see console.groq.com/docs/models), e.g. `openai/gpt-oss-120b` |
    | `LLM_API_KEY` | your Groq key |
    | `LLM_DAILY_BUDGET` | `2000` |
-   | `ALLOWED_ORIGINS` | `http://localhost:3000` for now; add the Vercel URL in Phase 3 |
+   | `ALLOWED_ORIGINS` | `http://localhost:3000` for now; add the Vercel URL in step 5 |
 
 4. Click **Deploy web service**. Render passes the port in `$PORT`, which the image already uses. When the service
    is **Live**, check it:
@@ -94,7 +95,33 @@ You create every account and paste every secret yourself. Nothing secret goes in
 2. Render's free tier sleeps after 15 minutes without traffic and allows 750 instance hours a month, enough for one
    service running all month. `/ping` never touches the database, so Neon still suspends between real visits.
 
-## 5. Streamlit Community Cloud: the web app (interim UI)
+## 5. Vercel: the web app
+
+The site in `web/` is a Next.js app. Pages are rendered on Vercel and cached; the chat and the float charts call the
+Render API straight from the visitor's browser, so each visitor's own IP counts against the rate limits and no
+shared secret is needed.
+
+1. Sign in at **https://vercel.com** with GitHub and click **Add New → Project**, then import this repository.
+2. Settings:
+
+   | Setting | Value |
+   |---|---|
+   | Framework Preset | **Next.js** (detected) |
+   | Root Directory | `web` |
+   | Environment Variable | `NEXT_PUBLIC_API_URL` = `https://<your-service>.onrender.com` |
+
+3. Click **Deploy**. When it finishes, note the production URL (for example `https://floatchat.vercel.app`).
+4. In **Render → your service → Environment**, set `ALLOWED_ORIGINS` to that URL plus local development, comma
+   separated, and save (Render redeploys):
+
+   ```text
+   https://floatchat.vercel.app,http://localhost:3000
+   ```
+
+5. Open the site and ask a question. The run log should fill in step by step and the answer should stream in.
+   If you later add a custom domain on Vercel, add it to `ALLOWED_ORIGINS` too.
+
+## 6. Streamlit Community Cloud: the old interim UI (optional)
 
 The Streamlit app (`app.py`) runs free on Streamlit Community Cloud and talks to the Render API. Streamlit's servers
 call the API for every visitor, so the app passes each visitor's IP along with a shared secret (`FRONTEND_TOKEN`);
@@ -136,6 +163,7 @@ without it, all visitors would share one rate limit.
 | LLM shows *missing or invalid LLM_API_KEY* | Re-paste the Groq key in Render's environment variables (it redeploys automatically) |
 | The first request takes about a minute | The service went to sleep: check the cron-job.org job is enabled and succeeding |
 | Daily refresh failed | Usually ERDDAP being slow or down; the site keeps serving the previous data. Re-run the workflow later |
+| The web app shows *Couldn't reach the FloatChat API* | Check `NEXT_PUBLIC_API_URL` on Vercel (then redeploy) and that the Vercel URL is in Render's `ALLOWED_ORIGINS` |
 | Streamlit app says it can't reach the API | Check `BACKEND_URL` in the app's **Settings → Secrets** (no trailing slash needed) and that the Render service is Live |
 | Streamlit visitors hit "Too many questions" quickly | `FRONTEND_TOKEN` must be identical in Render and in the Streamlit secrets |
 | Render's free tier changes | The API is a plain Docker image: any Docker host (Google Cloud Run, Hugging Face Spaces, Fly.io) works with the same environment variables |

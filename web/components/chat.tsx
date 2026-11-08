@@ -393,7 +393,7 @@ export function Chat({ initialQuestion, coverage }: { initialQuestion?: string; 
             }}
             rows={1}
             maxLength={300}
-            placeholder={runs.length ? "Ask a follow-up, e.g. now only the Bay of Bengal" : "Ask about the Indian Ocean"}
+            placeholder={runs.length ? "Ask a follow-up" : "Ask about the Indian Ocean"}
             className="max-h-40 min-h-[40px] flex-1 resize-none bg-transparent py-2.5 text-[15px] leading-snug text-ink outline-none placeholder:text-muted [field-sizing:content]"
           />
           <button
