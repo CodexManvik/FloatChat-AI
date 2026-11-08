@@ -2,7 +2,7 @@
 # Frontend: http://localhost:8501   API docs: http://localhost:8000/docs
 services:
   db:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_DB: argo
       POSTGRES_USER: floatchat
