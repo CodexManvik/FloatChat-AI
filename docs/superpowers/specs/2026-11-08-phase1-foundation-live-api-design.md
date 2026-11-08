@@ -49,7 +49,8 @@ One database: Neon Postgres with the pgvector extension. ChromaDB is removed.
 
 - `floats`: one row per float (`float_id` = WMO number as text, `wmo_id`, first/last position and date, status).
 - `profiles`: one row per dive cycle.
-  - Columns: `profile_id` (serial), `float_id`, `cycle_number`, `profile_date`, `lat`, `lon`, `region`, `n_levels`.
+  - Columns: `profile_id` (serial), `float_id`, `cycle_number`, `profile_date`, `profile_lat`, `profile_lon`,
+    `region`, `n_levels` (existing names kept so current endpoints and the Streamlit app keep working).
   - Sensor flags: `has_oxygen`, `has_chlorophyll`, `has_nitrate`, `has_ph`.
   - Search columns: `description` (text) and `embedding vector(384)`.
   - Constraints and indexes: **unique `(float_id, cycle_number)`**; indexes on `profile_date` and `region`; an
@@ -57,8 +58,8 @@ One database: Neon Postgres with the pgvector extension. ChromaDB is removed.
 - `measurements`: one row per depth level: `profile_id`, `float_id`, `time`, `lat`, `lon`, `depth`, `pressure`,
   `temperature`, `salinity`, `oxygen`, `chlorophyll`, `nitrate`, `ph`. The unused `backscatter`, `cdom`,
   `downwelling_par` columns are dropped. Indexes on `profile_id`, `float_id`, `depth`.
-- `ingest_runs` (new): `run_id`, `started_at`, `finished_at`, `status`, `profiles_added`, `profiles_removed`,
-  `newest_profile_date`. Drives "data updated N hours ago".
+- `ingest_runs` (new): `run_id`, `kind` (`backfill` / `refresh` / `snapshot`), `started_at`, `finished_at`, `status`,
+  `profiles_added`, `profiles_removed`, `newest_profile_date`. Drives "data updated N hours ago".
 - `query_log` (new): `logged_at`, `question`, `query_type`, `intent`, `latency_ms`, `success`, `cached`,
   `llm_used`. No IP addresses or other personal data.
 
@@ -85,16 +86,17 @@ creates the same schema locally and on Neon.
 
 The fetch/ingest scripts become a `pipeline/` package with four steps.
 
-1. **Fetch** (`pipeline/fetch.py`): download profiles for a date range and bounding box from Ifremer ERDDAP in
+1. **Fetch** (`pipeline/erddap.py`): download profiles for a date range and bounding box from Ifremer ERDDAP in
    5-day windows with retries.
-   - Core dataset `ArgoFloats`: `temp`, `psal`, keeping only rows whose `temp_qc` and `psal_qc` are 1 or 2
-     (good / probably good).
+   - Core dataset `ArgoFloats`: `temp`, `psal`; each value is kept only if its own QC flag (`temp_qc`, `psal_qc`)
+     is 1 or 2 (good / probably good), otherwise it becomes missing and is filled by interpolation.
    - BGC dataset `ArgoFloats-synthetic-BGC`: `doxy_adjusted`, `chla_adjusted`, `nitrate_adjusted`,
-     `ph_in_situ_total_adjusted`, keeping only rows whose matching `*_adjusted_qc` is 1 or 2.
+     `ph_in_situ_total_adjusted`, each kept only if its `*_adjusted_qc` is 1 or 2.
+   - Rows where every variable is missing are dropped.
    - Duplicate (float, cycle, pressure) rows are dropped, as in the current script.
 2. **Shape** (`pipeline/shape.py`): interpolate each profile onto the 24 standard pressure levels (5–2,000 dbar),
    label its region (`ocean_regions.region_for`), and set the sensor flags.
-3. **Describe & embed** (`pipeline/embed.py`): build the description sentence (current wording, extended with
+3. **Describe & embed** (`pipeline/describe.py`, `pipeline/embed.py`): build the description sentence (current wording, extended with
    chlorophyll/nitrate/pH facts when present). Embed with all-MiniLM-L6-v2 via onnxruntime **without padding to
    256 tokens** (dynamic padding per batch). The embedding cache file is kept for the bundled snapshot.
 4. **Load** (`pipeline/load.py`): apply the schema, insert new profiles and their measurements
@@ -133,6 +135,8 @@ floatchat/          core logic, no web framework imports
   llm.py            OpenAI-compatible client (current llm.py)
   regions.py        current ocean_regions.py
   embedder.py       ONNX MiniLM query embedder (shared with pipeline/embed.py)
+  answer.py         builds the answer (SQL rows or matching profiles, LLM explanation)  (from main.py)
+  exports.py        CSV / NetCDF / ASCII exports                                   (from export_utils.py)
 api/
   main.py           FastAPI app, routers, CORS, middleware
   limits.py         per-IP rate limiter + daily LLM budget
