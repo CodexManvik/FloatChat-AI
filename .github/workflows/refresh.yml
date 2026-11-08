@@ -1,0 +1,40 @@
+name: Daily data refresh
+
+on:
+  schedule:
+    - cron: "0 2 * * *"   # 02:00 UTC every day
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "How many recent days to fetch"
+        default: "10"
+
+permissions:
+  contents: read
+  actions: write   # needed to keep this scheduled workflow enabled
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-api.txt
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/floatchat
+          key: minilm-onnx-v1
+      - run: pip install -r requirements-api.txt
+      - name: Fetch new profiles and prune old ones
+        env:
+          ADMIN_DATABASE_URL: ${{ secrets.NEON_ADMIN_URL }}
+        run: python -m pipeline refresh --days "${{ github.event.inputs.days || '10' }}"
+      - name: Keep this schedule from being auto-disabled after 60 days
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow enable refresh.yml --repo "${{ github.repository }}"
