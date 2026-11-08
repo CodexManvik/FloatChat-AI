@@ -238,7 +238,7 @@ which listens on port 5433 and matches the settings in `.env.example`.
 ```bash
 python -m venv .venv
 .venv\Scripts\activate                 # macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt    # API, frontend and test tools
 cp .env.example .env                   # add your LLM key if you have one
 docker compose up -d db                # PostgreSQL + pgvector on port 5433
 
@@ -253,8 +253,8 @@ and lint with `ruff check .`.
 
 ### Deploying your own copy
 
-See [DEPLOY.md](DEPLOY.md): Neon (database), Render (API), GitHub Actions (daily data),
-cron-job.org (keep-awake) and Groq (LLM), all on free tiers.
+See [DEPLOY.md](DEPLOY.md): Neon (database), Render (API), Streamlit Community Cloud (web app), GitHub Actions
+(daily data), cron-job.org (keep-awake) and Groq (LLM), all on free tiers.
 
 ### Troubleshooting
 
