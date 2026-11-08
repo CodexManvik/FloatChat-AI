@@ -4,8 +4,10 @@ anything else is written by the LLM and must pass a read-only check. The API's
 database role is read-only as well, so a bad query can never change data.
 """
 
+import json
 import logging
 import re
+import time
 from collections.abc import Callable
 
 import pandas as pd
@@ -17,6 +19,7 @@ from floatchat.filters import clean_filters, sql_conditions
 
 logger = logging.getLogger(__name__)
 ChatFn = Callable[..., str | None]
+MAX_SQL_REPAIRS = 2
 
 ZONE_CASE = ("CASE WHEN m.depth < 200 THEN 'Euphotic Zone' WHEN m.depth < 1000 THEN 'Mesopelagic Zone' "
              "ELSE 'Bathypelagic Zone' END")
@@ -149,11 +152,15 @@ class SqlAgent:
         if intent in TEMPLATES:
             sql, params = render_template(intent, filters)
             return sql, intent, params
+        filters = clean_filters(filters)
+        scope = (f"Only include profiles matching these filters (columns of profiles): {json.dumps(filters)}. "
+                 "month_num/year refer to profiles.profile_date.\n" if filters else "")
         prompt = (
             "You are an expert PostgreSQL analyst for Argo ocean float data.\n"
             f"{SCHEMA_PROMPT}\n"
             "Rules: one read-only SELECT statement; meaningful column aliases; handle NULLs; "
-            "at most 1000 rows; ORDER BY for readable output.\n\n"
+            "at most 1000 rows; ORDER BY for readable output.\n"
+            f"{scope}\n"
             f"Question: {question}\n"
             "Return ONLY the SQL, no explanation and no code fences."
         )
@@ -162,31 +169,60 @@ class SqlAgent:
             return None, "error", {}
         return _clean_llm_sql(sql), "custom", {}
 
-    def execute_sql_query(self, sql: str, params: dict | None = None) -> tuple[pd.DataFrame, str]:
+    def _execute(self, sql: str, params: dict | None) -> tuple[pd.DataFrame, str, str]:
+        """Run SQL; returns (rows, status, database error text for the repair prompt)."""
         if not self.validate_sql(sql):
-            return pd.DataFrame(), "Invalid or unsafe SQL query"
+            return pd.DataFrame(), "Invalid or unsafe SQL query", "The query must be one read-only SELECT statement."
         try:
             with self.engine.connect() as conn:
                 df = pd.read_sql_query(text(sql), conn, params=params or {})
         except Exception as e:
             logger.info("SQL failed: %s", e)
-            return pd.DataFrame(), f"Database error: {e.__class__.__name__}"
+            detail = str(getattr(e, "orig", e)).strip().splitlines()[0][:300]
+            return pd.DataFrame(), f"Database error: {e.__class__.__name__}", detail
         if df.empty:
-            return df, "Query executed successfully but returned no results"
-        return df, "success"
+            return df, "Query executed successfully but returned no results", ""
+        return df, "success", ""
 
-    def run(self, question: str, filters: dict | None = None,
-            intent: str | None = None) -> tuple[dict | None, str | None]:
+    def execute_sql_query(self, sql: str, params: dict | None = None) -> tuple[pd.DataFrame, str]:
+        df, status, _ = self._execute(sql, params)
+        return df, status
+
+    def _repair(self, question: str, sql: str, error: str) -> str | None:
+        prompt = (
+            "You are an expert PostgreSQL analyst for Argo ocean float data.\n"
+            f"{SCHEMA_PROMPT}\n"
+            f"This SQL, written for the question below, failed.\nQuestion: {question}\nSQL: {sql}\n"
+            f"Error: {error}\n\nReturn ONLY the corrected read-only SQL, no explanation and no code fences."
+        )
+        fixed = self.chat(prompt, temperature=0.0)
+        return _clean_llm_sql(fixed) if fixed else None
+
+    def run(self, question: str, filters: dict | None = None, intent: str | None = None,
+            emit: Callable[[dict], None] | None = None) -> tuple[dict | None, str | None]:
+        emit = emit or (lambda event: None)
         if intent is None and not self.is_analytical_query(question):
             return None, "Not an analytical query"
         sql, intent, params = self.generate_sql(question, filters, intent)
         if not sql:
             return None, "Failed to generate SQL"
-        df, status = self.execute_sql_query(sql, params)
-        if status != "success":
-            return None, f"SQL execution failed: {status}"
-        return {"sql_query": sql, "params": params, "results": df, "intent": intent,
-                "summary_stats": _summary_stats(df)}, None
+        repairs_left = MAX_SQL_REPAIRS if intent == "custom" else 0
+        for attempt in range(1, repairs_left + 2):
+            started = time.perf_counter()
+            df, status, error = self._execute(sql, params)
+            ok = status == "success"
+            emit({"step": "sql", "attempt": attempt, "sql": sql, "params": params,
+                  "status": "success" if ok else ("empty" if not error else "error"),
+                  "rows": int(len(df)), "ms": int((time.perf_counter() - started) * 1000)})
+            if ok:
+                return {"sql_query": sql, "params": params, "results": df, "intent": intent,
+                        "attempts": attempt, "summary_stats": _summary_stats(df)}, None
+            if not error or attempt > repairs_left:
+                break
+            sql = self._repair(question, sql, error)  # LLM-written SQL failed: send the error back for a fix
+            if not sql:
+                break
+        return None, f"SQL execution failed: {status}"
 
 
 def _clean_llm_sql(sql: str) -> str:
