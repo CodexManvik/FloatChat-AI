@@ -6,13 +6,16 @@ Statistical questions run as SQL; descriptive ones search profile embeddings
 and caches so repeated questions and dashboard calls stay cheap.
 """
 
+import json
 import logging
+import queue
+import threading
 import time
 from typing import Annotated, Literal
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, StringConstraints
 
 from api.cache import TTLCache, normalize_question
@@ -33,8 +36,17 @@ UNLIMITED_PATHS = {"/ping", "/health", "/docs", "/openapi.json", "/redoc"}
 ERROR_ANSWER = "Something went wrong while answering that question. Please try rephrasing it."
 
 
+class HistoryTurn(BaseModel):
+    """One earlier turn of the conversation, as returned by /query (lets follow-ups be understood)."""
+    question: Annotated[str, StringConstraints(max_length=300)]
+    query_type: str | None = None
+    intent: str | None = None
+    filters: dict = Field(default_factory=dict)
+
+
 class QueryRequest(BaseModel):
     query_text: Question
+    history: list[HistoryTurn] = Field(default_factory=list, max_length=3)
 
 
 class QueryResponse(BaseModel):
@@ -43,6 +55,9 @@ class QueryResponse(BaseModel):
     context_documents: list[str]
     retrieved_metadata: list[dict]
     sql_results: list[dict] | None = None
+    intent: str | None = None
+    filters: dict = Field(default_factory=dict)
+    steps: list[dict] = Field(default_factory=list)
 
 
 class ProfileRequest(BaseModel):
@@ -58,7 +73,7 @@ class ExportRequest(BaseModel):
 
 def create_app(engine=None, get_embedder_fn=get_embedder, chat_fn=llm.chat, query_limits=None,
                other_limit_per_minute: int = 60, llm_budget: int | None = None,
-               llm_enabled=llm.is_configured) -> FastAPI:
+               llm_enabled=llm.is_configured, stream_chat_fn=llm.chat_stream) -> FastAPI:
     engine = engine or make_engine(config.DATABASE_URL)
     per_minute, per_day = query_limits or (config.QUERY_LIMIT_PER_MINUTE, config.QUERY_LIMIT_PER_DAY)
     query_limiter = RateLimiter(per_minute, per_day, noun="questions")
@@ -72,6 +87,11 @@ def create_app(engine=None, get_embedder_fn=get_embedder, chat_fn=llm.chat, quer
         if not budget.try_consume():
             return None
         return chat_fn(*args, **kwargs)
+
+    def budgeted_stream(*args, **kwargs):
+        if not budget.try_consume():
+            return iter(())
+        return stream_chat_fn(*args, **kwargs)
 
     agent = SqlAgent(engine, chat=budgeted_chat)
 
@@ -89,7 +109,7 @@ def create_app(engine=None, get_embedder_fn=get_embedder, chat_fn=llm.chat, quer
     @app.middleware("http")
     async def rate_limit(request: Request, call_next):
         if request.method != "OPTIONS" and request.url.path not in UNLIMITED_PATHS:
-            limiter = query_limiter if request.url.path == "/query" else other_limiter
+            limiter = query_limiter if request.url.path.startswith("/query") else other_limiter
             allowed, message = limiter.check(client_ip(request, config.FRONTEND_TOKEN))
             if not allowed:
                 return JSONResponse(status_code=429, content={"error": "rate_limited", "message": message})
@@ -132,34 +152,73 @@ def create_app(engine=None, get_embedder_fn=get_embedder, chat_fn=llm.chat, quer
     def floats():
         return cached(dashboard, "floats", lambda: queries.get_floats(engine))
 
-    @app.post("/query", response_model=QueryResponse)
-    def query(request: QueryRequest):
-        question = request.query_text
+    def answer(question: str, history: list[HistoryTurn], emit=None, stream: bool = False) -> dict:
+        """Answer with caching and logging; `emit` receives step/token events (used by the stream endpoint)."""
+        emit = emit or (lambda event: None)
         started = time.perf_counter()
         try:
             run_id = cached(status, "data", lambda: queries.data_status(engine))["latest_run_id"]
         except Exception:
             run_id = 0
+        cacheable = not history  # a follow-up's answer depends on the conversation
         key = f"{normalize_question(question)}|{run_id}"  # new data -> new key -> no stale answers
-        result = answers.get(key)
+        result = answers.get(key) if cacheable else None
         was_cached = result is not None
-        if not was_cached:
+        if was_cached:
+            for step in result.get("steps", []):
+                emit({"type": "step", **step})
+            emit({"type": "token", "text": result["answer"]})
+        else:
+            llm_expected = llm_enabled() and not budget.exhausted
             try:
-                result = answer_question(question, engine=engine, embedder_factory=get_embedder_fn,
-                                         agent=agent, chat=budgeted_chat)
+                result = answer_question(question, engine=engine, embedder_factory=get_embedder_fn, agent=agent,
+                                         chat=budgeted_chat, history=[turn.model_dump() for turn in history],
+                                         use_llm_router=llm_expected, emit=emit,
+                                         stream_chat=budgeted_stream if stream else None)
             except Exception:
                 logger.exception("Failed to answer %r", question)
                 result = {"answer": ERROR_ANSWER, "query_type": "error", "context_documents": [],
                           "retrieved_metadata": [], "intent": None, "llm_used": False}
+                emit({"type": "token", "text": ERROR_ANSWER})
             # Don't pin a data-only answer for 24 h when the LLM should have helped but failed (e.g. rate limit)
-            llm_expected = llm_enabled() and not budget.exhausted
-            if result["query_type"] != "error" and (result.get("llm_used") or not llm_expected):
+            if cacheable and result["query_type"] != "error" and (result.get("llm_used") or not llm_expected):
                 answers.set(key, result)
         queries.log_query(engine, question=question, query_type=result["query_type"], intent=result.get("intent"),
                           latency_ms=int((time.perf_counter() - started) * 1000),
                           success=result["query_type"] != "error", cached=was_cached,
                           llm_used=bool(result.get("llm_used")) and not was_cached)
-        return result
+        return QueryResponse(**result).model_dump()
+
+    @app.post("/query", response_model=QueryResponse)
+    def query(request: QueryRequest):
+        return answer(request.query_text, request.history)
+
+    @app.post("/query/stream")
+    def query_stream(request: QueryRequest):
+        """
+        Server-Sent Events: `step` events as the answer is worked out, `token` events with the answer text as it
+        is written, then one `result` event with the same payload /query returns (or `error`).
+        """
+        events: queue.Queue = queue.Queue()
+
+        def work():
+            try:
+                events.put({"type": "result", **answer(request.query_text, request.history, events.put, stream=True)})
+            except Exception:
+                logger.exception("Streaming answer failed")
+                events.put({"type": "error", "message": ERROR_ANSWER})
+            finally:
+                events.put(None)
+
+        threading.Thread(target=work, daemon=True).start()
+
+        def sse():
+            while (event := events.get()) is not None:
+                kind = event.pop("type")
+                yield f"event: {kind}\ndata: {json.dumps(event, default=str)}\n\n"
+
+        return StreamingResponse(sse(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     @app.post("/get_profiles")
     def get_profiles(request: ProfileRequest):
