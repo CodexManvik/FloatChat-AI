@@ -20,6 +20,13 @@ def test_analytical_answer(reader_engine):
     assert result["llm_used"] is False
 
 
+def test_analytical_answer_applies_the_question_filters(reader_engine):
+    result = ask(reader_engine, "What is the average temperature at different depths in the Arabian Sea?")
+    assert result["answer"].startswith("**Average temperature and salinity at each depth in the Arabian Sea**")
+    assert result["retrieved_metadata"][0]["filters"] == {"region": "Arabian Sea"}
+    assert ":region" in result["retrieved_metadata"][0]["sql_query"]
+
+
 def test_semantic_answer_with_region_filter(reader_engine):
     result = ask(reader_engine, "Show me profiles in the Arabian Sea")
     assert result["query_type"] == "semantic"

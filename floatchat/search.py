@@ -3,17 +3,7 @@
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
-# Only these filter keys reach SQL; values are always bound parameters
-FILTER_SQL = {
-    "region": "region = :region",
-    "month_num": "EXTRACT(MONTH FROM profile_date) = :month_num",
-    "year": "EXTRACT(YEAR FROM profile_date) = :year",
-    "has_oxygen": "has_oxygen",
-    "has_chlorophyll": "has_chlorophyll",
-    "has_nitrate": "has_nitrate",
-    "has_ph": "has_ph",
-}
-VALUE_FILTERS = ("region", "month_num", "year")
+from floatchat.filters import clean_filters, sql_conditions
 
 
 def vector_literal(vector) -> str:
@@ -21,8 +11,8 @@ def vector_literal(vector) -> str:
 
 
 def search_profiles(engine: Engine, query_vector, filters: dict, limit: int = 8, ef_search: int = 200) -> list[dict]:
-    clauses = ["embedding IS NOT NULL"] + [FILTER_SQL[key] for key in filters if key in FILTER_SQL]
-    params = {key: filters[key] for key in VALUE_FILTERS if key in filters}
+    conditions, params = sql_conditions(clean_filters(filters), alias="profiles")
+    clauses = ["embedding IS NOT NULL"] + conditions
     params.update(q=vector_literal(query_vector), limit=limit)
     columns = """profile_id, float_id, cycle_number, to_char(profile_date, 'YYYY-MM-DD') AS date,
                EXTRACT(YEAR FROM profile_date)::int AS year, EXTRACT(MONTH FROM profile_date)::int AS month_num,

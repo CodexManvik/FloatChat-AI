@@ -6,6 +6,7 @@ import pandas as pd
 from sqlalchemy.engine import Engine
 
 from floatchat.db.queries import df_records
+from floatchat.filters import clean_filters
 from floatchat.regions import MONTHS, parse_filters
 from floatchat.search import search_profiles
 from floatchat.sql_agent import SqlAgent
@@ -87,17 +88,23 @@ def format_results_for_display(df: pd.DataFrame, intent: str) -> str:
     return "\n".join(lines)
 
 
-def _analytical_answer(question: str, agent: SqlAgent, chat) -> dict | None:
-    result, error = agent.run(question)
+def _analytical_answer(question: str, agent: SqlAgent, chat, filters: dict) -> dict | None:
+    result, error = agent.run(question, filters)
     if error:
         return None
     df, intent = result["results"], result["intent"]
+    applied = clean_filters(filters)
+    if intent == "regional_comparison":
+        applied.pop("region", None)
     insight = chat(
         f"Question: {question}\n\nSQL result (first rows):\n{df.head(15).to_string(index=False)}\n\n"
         "In 2-3 sentences, explain the main oceanographic pattern in this result.",
         system=SYSTEM_PROMPT,
     )
-    answer = f"**{INTENT_TITLES.get(intent, 'Query results')}**\n\n{format_results_for_display(df, intent)}"
+    title = INTENT_TITLES.get(intent, "Query results")
+    if applied and intent in INTENT_TITLES:
+        title += " " + describe_filters(applied)
+    answer = f"**{title}**\n\n{format_results_for_display(df, intent)}"
     if insight:
         answer += f"\n\n**What this means:** {insight}"
     return {
@@ -105,8 +112,8 @@ def _analytical_answer(question: str, agent: SqlAgent, chat) -> dict | None:
         "query_type": "analytical",
         "context_documents": [result["sql_query"]],
         "retrieved_metadata": [{"query_type": "analytical", "intent": intent, "sql_query": result["sql_query"],
-                                "row_count": int(len(df)), "columns": [str(c) for c in df.columns],
-                                "summary_stats": result["summary_stats"]}],
+                                "filters": applied, "row_count": int(len(df)),
+                                "columns": [str(c) for c in df.columns], "summary_stats": result["summary_stats"]}],
         "sql_results": df_records(df.head(200)),
         "intent": intent,
         "llm_used": bool(insight) or intent == "custom",
@@ -143,7 +150,7 @@ def _semantic_answer(question: str, engine: Engine, embedder, chat) -> dict:
 
 def answer_question(question: str, *, engine: Engine, embedder_factory: Callable, agent: SqlAgent, chat) -> dict:
     if agent.is_analytical_query(question):
-        analytical = _analytical_answer(question, agent, chat)
+        analytical = _analytical_answer(question, agent, chat, parse_filters(question))
         if analytical:
             return analytical
     return _semantic_answer(question, engine, embedder_factory(), chat)
