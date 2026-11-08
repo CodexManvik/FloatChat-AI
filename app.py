@@ -388,7 +388,7 @@ def render_overview():
          "Questions like <i>\"average temperature at different depths\"</i> become SQL that runs on PostgreSQL. "
          "Common patterns use vetted templates; anything else is written by the LLM and checked to be read-only."),
         ("🔎 Descriptive questions → RAG",
-         "Every profile is summarised in words and embedded into ChromaDB. FloatChat finds the closest matches, "
+         "Every profile is summarised in words and embedded with pgvector. FloatChat finds the closest matches, "
          "narrowed by any region or month you mention, and the LLM answers from them."),
         ("📈 Visualize & export",
          "Each answer comes with maps, depth profiles or charts, and the underlying data can be downloaded "
@@ -535,7 +535,7 @@ def main():
     <div class="footer">
         FloatChat · data: <a href="https://argo.ucsd.edu/" target="_blank">Argo Program</a> via
         <a href="https://erddap.ifremer.fr/erddap/" target="_blank">Ifremer ERDDAP</a> ·
-        built with FastAPI, PostgreSQL, ChromaDB and Streamlit
+        built with FastAPI, PostgreSQL + pgvector and Streamlit
     </div>
     """, unsafe_allow_html=True)
 
