@@ -31,7 +31,7 @@ MAP_CONFIG = {"scrollZoom": False}  # keep the mouse wheel for page scrolling
 SUGGESTIONS = [  # (icon, topic, question)
     ("🌡️", "Depth structure", "What is the average temperature at different depths?"),
     ("🗺️", "Regions", "Compare surface temperature across ocean regions"),
-    ("🔎", "Find profiles", "Show me salinity profiles near the equator in March 2024"),
+    ("🔎", "Find profiles", "Show me salinity profiles near the equator in March 2026"),
     ("🫧", "Oxygen minimum", "Which floats measured low oxygen in the Arabian Sea?"),
     ("🧪", "Biogeochemistry", "Average dissolved oxygen by ocean zone"),
     ("📅", "Trends", "Show the monthly temperature trend"),
@@ -151,10 +151,23 @@ def export_profiles(profile_ids: tuple, fmt: str) -> bytes:
     return api_post("/export", {"format": fmt, "profile_ids": list(profile_ids)}).content
 
 
+def conversation_history(turns: int = 3) -> list[dict]:
+    """The last few answered questions, so the API can understand follow-ups like "now only the Arabian Sea"."""
+    history, question = [], None
+    for msg in st.session_state.messages:
+        if msg["role"] == "user":
+            question = msg["content"]
+        elif question and (response := msg.get("response")) and response.get("query_type") in ("analytical", "semantic"):
+            history.append({"question": question, "query_type": response["query_type"],
+                            "intent": response.get("intent"), "filters": response.get("filters") or {}})
+            question = None
+    return history[-turns:]
+
+
 def ask_backend(question: str) -> dict:
     try:
         started = time.perf_counter()
-        response = api_post("/query", {"query_text": question}).json()
+        response = api_post("/query", {"query_text": question, "history": conversation_history()}).json()
         response["elapsed"] = time.perf_counter() - started
         return response
     except requests.exceptions.RequestException as e:
@@ -485,11 +498,46 @@ def render_response(msg: dict, idx: int):
             for doc in response.get("context_documents", []):
                 st.caption(doc)
 
+    render_steps(response.get("steps") or [])
+
+
+def describe_step(step: dict) -> str:
+    kind = step.get("step")
+    if kind == "understood":
+        parts = []
+        for key, value in (step.get("filters") or {}).items():
+            parts.append(key.removeprefix("has_") if value is True else f"{key.replace('_num', '')}={value}")
+        filters = ", ".join(parts) or "none"
+        how = "SQL" if step.get("path") == "analytical" else "profile search"
+        intent = f" · {step['intent'].replace('_', ' ')}" if step.get("intent") else ""
+        return (f"**Understood** ({'AI router' if step.get('router') == 'llm' else 'keyword router'}): "
+                f"{how}{intent} · filters: {filters}")
+    if kind == "sql":
+        status = {"success": f"{step.get('rows', 0)} rows", "empty": "no rows", "error": "failed, repairing"}
+        return f"**SQL attempt {step.get('attempt', 1)}**: {status.get(step.get('status'), step.get('status'))} · {step.get('ms', 0)} ms"
+    if kind == "search":
+        note = " (no exact match, widened the search)" if step.get("fallback_without_filters") else ""
+        return f"**Searched profiles**: {step.get('matches', 0)} matches{note}"
+    if kind == "answer":
+        return "**Answer** written by the LLM" if step.get("llm_used") else "**Answer** built from the data"
+    return f"**{kind}**"
+
+
+def render_steps(steps: list[dict]):
+    if not steps:
+        return
+    with st.expander("How I answered"):
+        for step in steps:
+            st.markdown(f"- {describe_step(step)}")
+            if step.get("step") == "sql" and step.get("status") != "success":
+                st.code(step.get("sql", ""), language="sql")
+
 
 def render_chat():
     st.markdown("## 💬 Ask FloatChat")
-    st.caption("Ask about temperature, salinity or oxygen in the Indian Ocean (Jan–Mar 2024). "
-               "Statistical questions run as SQL; descriptive ones search the profile index.")
+    st.caption("Ask about temperature, salinity or oxygen in the Indian Ocean over the last 12 months. "
+               "Statistical questions run as SQL; descriptive ones search the profile index. "
+               "Follow-ups work too, e.g. *now only the Arabian Sea*.")
 
     if not st.session_state.messages:
         st.markdown("""
@@ -512,7 +560,7 @@ def render_chat():
             if msg["role"] == "assistant":
                 render_response(msg, idx)
 
-    question = st.chat_input("e.g. Show me salinity profiles near the equator in March 2024")
+    question = st.chat_input("e.g. Show me salinity profiles near the equator in March 2026")
     question = question or st.session_state.pop("pending_question", None)
     if question:
         st.session_state.messages.append({"role": "user", "content": question})

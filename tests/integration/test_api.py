@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
@@ -12,7 +14,20 @@ def make_client(engine, **kwargs):
     kwargs.setdefault("get_embedder_fn", FakeEmbedder)
     kwargs.setdefault("chat_fn", lambda *a, **k: None)
     kwargs.setdefault("llm_enabled", lambda: False)
+    kwargs.setdefault("stream_chat_fn", lambda *a, **k: iter(()))
     return TestClient(create_app(engine=engine, **kwargs))
+
+
+def stream(client, question, history=None, ip="1.1.1.1"):
+    """POST /query/stream and parse the Server-Sent Events into (event, data) pairs."""
+    resp = client.post("/query/stream", json={"query_text": question, "history": history or []},
+                       headers={"X-Forwarded-For": ip})
+    assert resp.status_code == 200 and resp.headers["content-type"].startswith("text/event-stream")
+    events = []
+    for block in resp.text.strip().split("\n\n"):
+        lines = dict(line.split(": ", 1) for line in block.splitlines())
+        events.append((lines["event"], json.loads(lines["data"])))
+    return events
 
 
 def ask(client, question, ip="1.1.1.1"):
@@ -44,10 +59,52 @@ def test_query_analytical_and_semantic(reader_engine):
     client = make_client(reader_engine)
     analytical = ask(client, "What is the average temperature at different depths?").json()
     assert analytical["query_type"] == "analytical" and analytical["sql_results"]
-    assert set(analytical) == {"answer", "query_type", "context_documents", "retrieved_metadata", "sql_results"}
+    assert set(analytical) == {"answer", "query_type", "context_documents", "retrieved_metadata", "sql_results",
+                               "intent", "filters", "steps"}
+    assert analytical["intent"] == "avg_by_depth" and [s["step"] for s in analytical["steps"]][0] == "understood"
     semantic = ask(client, "Show me profiles in the Arabian Sea").json()
     assert semantic["query_type"] == "semantic"
     assert all(m["region"] == "Arabian Sea" for m in semantic["retrieved_metadata"])
+
+
+def test_follow_up_question_with_history(reader_engine):
+    client = make_client(reader_engine)
+    first = ask(client, "What is the average temperature at different depths?").json()
+    history = [{"question": "What is the average temperature at different depths?",
+                "query_type": first["query_type"], "intent": first["intent"], "filters": first["filters"]}]
+    resp = client.post("/query", json={"query_text": "now only the Arabian Sea", "history": history},
+                       headers={"X-Forwarded-For": "1.1.1.1"}).json()
+    assert resp["intent"] == "avg_by_depth" and resp["filters"] == {"region": "Arabian Sea"}
+    too_long = client.post("/query", json={"query_text": "x", "history": history * 4})
+    assert too_long.status_code == 422
+
+
+def test_stream_sends_steps_tokens_then_the_result(reader_engine):
+    client = make_client(reader_engine, chat_fn=lambda *a, **k: None,
+                         stream_chat_fn=lambda *a, **k: iter(["Streamed ", "answer."]), llm_enabled=lambda: True)
+    events = stream(client, "Show me profiles in the Arabian Sea")
+    kinds = [kind for kind, _ in events]
+    assert kinds[0] == "step" and kinds[-1] == "result" and "token" in kinds
+    assert kinds.index("token") > kinds.index("step")
+    result = events[-1][1]
+    assert result["answer"] == "".join(data["text"] for kind, data in events if kind == "token")
+    assert result["answer"] == "Streamed answer." and result["query_type"] == "semantic"
+    assert [data["step"] for kind, data in events if kind == "step"] == [s["step"] for s in result["steps"]]
+
+
+def test_cached_stream_replays_steps(reader_engine):
+    client = make_client(reader_engine)
+    first = stream(client, "What is the average temperature at different depths?")
+    second = stream(client, "What is the average temperature at different depths?")
+    assert [k for k, _ in second] == [k for k, _ in first if k == "step"] + ["token", "result"]
+    assert second[-1][1]["answer"] == first[-1][1]["answer"]
+
+
+def test_stream_is_rate_limited_with_query(reader_engine):
+    client = make_client(reader_engine, query_limits=(1, 100))
+    stream(client, "Show me profiles in the Arabian Sea")
+    limited = client.post("/query", json={"query_text": "again"}, headers={"X-Forwarded-For": "1.1.1.1"})
+    assert limited.status_code == 429
 
 
 def test_query_validation(reader_engine):
@@ -80,6 +137,8 @@ def test_answers_are_not_cached_when_the_llm_failed(reader_engine, loaded_db):
     calls = []
 
     def flaky_llm(*a, **k):
+        if k.get("json_mode"):
+            return None  # router call: fall back to keywords
         calls.append(1)
         return None if len(calls) == 1 else "MOCK ANSWER"
 

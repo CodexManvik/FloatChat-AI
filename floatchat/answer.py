@@ -6,7 +6,9 @@ import pandas as pd
 from sqlalchemy.engine import Engine
 
 from floatchat.db.queries import df_records
-from floatchat.regions import MONTHS, parse_filters
+from floatchat.filters import clean_filters
+from floatchat.regions import MONTHS
+from floatchat.router import Route, route
 from floatchat.search import search_profiles
 from floatchat.sql_agent import SqlAgent
 
@@ -87,63 +89,121 @@ def format_results_for_display(df: pd.DataFrame, intent: str) -> str:
     return "\n".join(lines)
 
 
-def _analytical_answer(question: str, agent: SqlAgent, chat) -> dict | None:
-    result, error = agent.run(question)
+class _Writer:
+    """Collects answer text and, when streaming, emits every piece as a token event as it is written."""
+
+    def __init__(self, emit, chat, stream_chat):
+        self.emit, self.chat, self.stream_chat = emit, chat, stream_chat
+        self.parts: list[str] = []
+
+    def write(self, text: str) -> None:
+        if text:
+            self.parts.append(text)
+            self.emit({"type": "token", "text": text})
+
+    def llm(self, prompt: str, prefix: str = "") -> bool:
+        """Write the LLM's reply (streamed when possible), preceded by `prefix`; False if the LLM gave nothing."""
+        if self.stream_chat:
+            wrote = False
+            for piece in self.stream_chat(prompt, system=SYSTEM_PROMPT):
+                if not wrote:
+                    self.write(prefix)
+                    wrote = True
+                self.write(piece)
+            return wrote
+        text = self.chat(prompt, system=SYSTEM_PROMPT)
+        if text:
+            self.write(prefix + text)
+        return bool(text)
+
+    @property
+    def text(self) -> str:
+        return "".join(self.parts)
+
+
+def _analytical_answer(route: Route, agent: SqlAgent, writer: _Writer, step) -> dict | None:
+    result, error = agent.run(route.question, route.filters, route.intent, emit=step)
     if error:
         return None
     df, intent = result["results"], result["intent"]
-    insight = chat(
-        f"Question: {question}\n\nSQL result (first rows):\n{df.head(15).to_string(index=False)}\n\n"
+    applied = clean_filters(route.filters)
+    if intent == "regional_comparison":
+        applied.pop("region", None)
+    title = INTENT_TITLES.get(intent, "Query results")
+    if applied and intent in INTENT_TITLES:
+        title += " " + describe_filters(applied)
+    writer.write(f"**{title}**\n\n{format_results_for_display(df, intent)}")
+    insight = writer.llm(
+        f"Question: {route.question}\n\nSQL result (first rows):\n{df.head(15).to_string(index=False)}\n\n"
         "In 2-3 sentences, explain the main oceanographic pattern in this result.",
-        system=SYSTEM_PROMPT,
+        prefix="\n\n**What this means:** ",
     )
-    answer = f"**{INTENT_TITLES.get(intent, 'Query results')}**\n\n{format_results_for_display(df, intent)}"
-    if insight:
-        answer += f"\n\n**What this means:** {insight}"
     return {
-        "answer": answer,
+        "answer": writer.text,
         "query_type": "analytical",
         "context_documents": [result["sql_query"]],
         "retrieved_metadata": [{"query_type": "analytical", "intent": intent, "sql_query": result["sql_query"],
-                                "row_count": int(len(df)), "columns": [str(c) for c in df.columns],
-                                "summary_stats": result["summary_stats"]}],
+                                "filters": applied, "row_count": int(len(df)),
+                                "columns": [str(c) for c in df.columns], "summary_stats": result["summary_stats"]}],
         "sql_results": df_records(df.head(200)),
         "intent": intent,
-        "llm_used": bool(insight) or intent == "custom",
+        "filters": applied,
+        "llm_used": insight or intent == "custom",
     }
 
 
-def _semantic_answer(question: str, engine: Engine, embedder, chat) -> dict:
-    filters = parse_filters(question)
-    vector = embedder.embed([question])[0]
+def _semantic_answer(route: Route, engine: Engine, embedder, writer: _Writer, step) -> dict:
+    filters = clean_filters(route.filters)
+    vector = embedder.embed([route.question])[0]
     matches = search_profiles(engine, vector, filters)
-    note = ""
-    if not matches and filters:
-        note = (f"No profiles were recorded {describe_filters(filters)} in this dataset, "
-                "so these are the closest matches overall.\n\n")
+    fallback = not matches and bool(filters)
+    if fallback:
         matches = search_profiles(engine, vector, {})
+    step({"step": "search", "matches": len(matches), "filters": filters, "fallback_without_filters": fallback})
     if not matches:
-        return {"answer": "I couldn't find any matching Argo profiles.", "query_type": "semantic",
-                "context_documents": [], "retrieved_metadata": [], "intent": None, "llm_used": False}
+        writer.write("I couldn't find any matching Argo profiles.")
+        return {"answer": writer.text, "query_type": "semantic", "context_documents": [], "retrieved_metadata": [],
+                "intent": None, "filters": filters, "llm_used": False}
 
+    if fallback:
+        writer.write(f"No profiles were recorded {describe_filters(filters)} in this dataset, "
+                     "so these are the closest matches overall.\n\n")
     documents = [m["description"] for m in matches]
     metadata = [{k: v for k, v in m.items() if k not in ("description", "distance")} for m in matches]
     context = "\n".join(f"- {doc}" for doc in documents)
-    answer = chat(f"Context:\n{context}\n\nQuestion: {question}", system=SYSTEM_PROMPT)
-    llm_used = bool(answer)
-    if not answer:
-        scope = f" {describe_filters(filters)}" if filters and not note else ""
+    llm_used = writer.llm(f"Context:\n{context}\n\nQuestion: {route.question}")
+    if not llm_used:
+        scope = f" {describe_filters(filters)}" if filters and not fallback else ""
         bullets = "\n".join(f"- **Float {m['float_id']}**, cycle {m['cycle_number']} · {m['date']} · "
                             f"{format_position(m['lat'], m['lon'])} ({m['region']})" for m in metadata)
-        answer = (f"Here are the {len(metadata)} Argo profiles{scope} most relevant to your question:\n\n"
-                  f"{bullets}\n\nTop match: {documents[0]}")
-    return {"answer": note + answer, "query_type": "semantic", "context_documents": documents,
-            "retrieved_metadata": metadata, "intent": None, "llm_used": llm_used}
+        writer.write(f"Here are the {len(metadata)} Argo profiles{scope} most relevant to your question:\n\n"
+                     f"{bullets}\n\nTop match: {documents[0]}")
+    return {"answer": writer.text, "query_type": "semantic", "context_documents": documents,
+            "retrieved_metadata": metadata, "intent": None, "filters": filters, "llm_used": llm_used}
 
 
-def answer_question(question: str, *, engine: Engine, embedder_factory: Callable, agent: SqlAgent, chat) -> dict:
-    if agent.is_analytical_query(question):
-        analytical = _analytical_answer(question, agent, chat)
-        if analytical:
-            return analytical
-    return _semantic_answer(question, engine, embedder_factory(), chat)
+def answer_question(question: str, *, engine: Engine, embedder_factory: Callable, agent: SqlAgent, chat,
+                    history: list[dict] | None = None, use_llm_router: bool = False,
+                    emit: Callable[[dict], None] | None = None, stream_chat=None) -> dict:
+    """
+    Answer a question and report each step. `emit` receives {"type": "step", ...} and {"type": "token", "text"}
+    events as they happen; with `stream_chat`, the LLM's text arrives token by token.
+    """
+    emit = emit or (lambda event: None)
+    steps: list[dict] = []
+
+    def step(event: dict) -> None:
+        steps.append(event)
+        emit({"type": "step", **event})
+
+    decided = route(question, history, chat, use_llm_router)
+    step({"step": "understood", "path": decided.path, "intent": decided.intent, "filters": decided.filters,
+          "question": decided.question, "router": decided.source})
+    result = None
+    if decided.path == "analytical":
+        result = _analytical_answer(decided, agent, _Writer(emit, chat, stream_chat), step)
+    if result is None:
+        result = _semantic_answer(decided, engine, embedder_factory(), _Writer(emit, chat, stream_chat), step)
+    step({"step": "answer", "llm_used": bool(result["llm_used"])})
+    result["steps"] = steps
+    return result

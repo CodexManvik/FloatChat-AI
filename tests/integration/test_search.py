@@ -50,5 +50,7 @@ def test_filtered_search_finds_every_match_even_when_the_index_would_miss(loaded
         forced_index.dispose()
 
 
-def test_unknown_filter_keys_are_ignored_and_no_match_is_empty(reader_engine):
-    assert search_profiles(reader_engine, query_vector(), {"region": "Atlantis", "evil": "1; DROP"}) == []
+def test_invalid_filters_are_dropped_and_no_match_is_empty(reader_engine):
+    unfiltered = search_profiles(reader_engine, query_vector(), {})
+    assert search_profiles(reader_engine, query_vector(), {"region": "Atlantis", "evil": "1; DROP"}) == unfiltered
+    assert search_profiles(reader_engine, query_vector(), {"year": 2030}) == []
