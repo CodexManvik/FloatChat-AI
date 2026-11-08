@@ -134,7 +134,22 @@ Because the demo is public, the API limits each visitor to 10 questions a minute
 day (falling back to data-only answers when the budget runs out), and caches answers until new data arrives.
 Interactive API docs are at `http://localhost:8000/docs` while the backend is running.
 
-### 5. Frontend: the Streamlit app (`app.py`)
+### 5. Frontend: the web app (`web/`)
+
+A Next.js site (TypeScript, Tailwind, Observable Plot, d3-geo) deployed on Vercel. It only displays results; all data
+and AI logic stays in the API.
+
+- **Landing page:** a live globe of every float coloured by surface temperature, the dataset's numbers, sample
+  questions, a scroll-through of how an answer is made, and the latest benchmark score.
+- **Chat:** streams `/query/stream`. Each answer opens with a **run log** (what the router understood, each SQL
+  attempt with rows and timing, the search, who wrote the text), then the answer as it is written, then a chart,
+  table and SQL, or the matching profiles on a map. Follow-ups, Stop and Retry work.
+- **Float pages:** trajectory, latest profile, a depth-time section (temperature, salinity or oxygen) and a
+  temperature-salinity diagram; a comparison page overlays two floats.
+- Colours for data are the oceanographers' own cmocean scales; light and dark themes follow the system setting.
+
+### 5b. The interim Streamlit app (`app.py`)
+
 
 - **Overview page:** headline numbers, a live map of every float coloured by surface temperature, profiles per
   region, and a **float explorer**. Click any float on the map to see its trajectory and latest depth profiles.
@@ -155,14 +170,15 @@ Interactive API docs are at `http://localhost:8000/docs` while the backend is ru
 | `docker-compose.yml` | Runs PostgreSQL + pgvector, the API (which loads the data on first start) and the frontend. |
 | `.github/workflows/` | `ci.yml` (lint, tests, container memory check), `refresh.yml` (daily data), `backfill.yml` (first load), `eval.yml` (weekly benchmark against the live API). |
 | `eval/` | 30 benchmark questions and the runner that scores the API (see [How well it works](#-how-well-it-works)). |
-| `DEPLOY.md` | Step-by-step free deployment: Neon, Render, GitHub Actions, cron-job.org and Groq. |
+| `DEPLOY.md` | Step-by-step free deployment: Neon, Render, Vercel, GitHub Actions, cron-job.org and Groq. |
 | `tests/` | Unit tests, plus integration tests against a real Postgres + pgvector (`tests/integration`). |
 
 ### Repository layout
 
 ```
 FloatChat-AI/
-├── app.py                  # Streamlit frontend
+├── web/                    # Next.js web app (landing, chat, float pages)
+├── app.py                  # interim Streamlit frontend
 ├── api/                    # FastAPI app: endpoints, rate limits, caches
 ├── floatchat/              # core: SQL agent, search, answers, embedder, LLM client, database
 ├── pipeline/               # ERDDAP → standard depths → descriptions/embeddings → Postgres
@@ -288,7 +304,15 @@ docker compose up -d db                # PostgreSQL + pgvector on port 5433
 python -m pipeline snapshot            # load the bundled data (~30 s)
 python -m pipeline create-reader       # the API's read-only role (password from READER_PASSWORD)
 uvicorn api.main:app --port 8000       # terminal 1: API
-streamlit run app.py                   # terminal 2: frontend → http://localhost:8501
+```
+
+Then start the web app in a second terminal (Node.js 20.9+):
+
+```bash
+cd web
+npm install
+echo NEXT_PUBLIC_API_URL=http://localhost:8000 > .env.local
+npm run dev                            # → http://localhost:3000
 ```
 
 Run the tests with `pytest` (integration tests use the `db` container and are skipped if it isn't running),
@@ -296,7 +320,7 @@ and lint with `ruff check .`.
 
 ### Deploying your own copy
 
-See [DEPLOY.md](DEPLOY.md): Neon (database), Render (API), Streamlit Community Cloud (web app), GitHub Actions
+See [DEPLOY.md](DEPLOY.md): Neon (database), Render (API), Vercel (web app), GitHub Actions
 (daily data), cron-job.org (keep-awake) and Groq (LLM), all on free tiers.
 
 ### Troubleshooting
