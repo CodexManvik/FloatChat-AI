@@ -197,7 +197,14 @@ every Monday (`eval.yml`) and shows the table in the job summary. Without an LLM
 template questions and simple follow-ups; the free-phrasing and custom-SQL questions are where the LLM earns its keep.
 
 <!-- eval-score -->
-**Latest score:** see [`eval/latest.md`](eval/latest.md).
+**Latest score (live API, 8 Nov 2026): 29/30 questions fully correct.**
+
+| Routing | Filters | Answer checks | Median latency | Answers written by the LLM |
+|---|---|---|---|---|
+| 97% | 100% | 100% | 2.6 s | 30/30 |
+
+The one miss: *"Profiles in the Bay of Bengal in September 2026"* went to custom SQL instead of profile search. The
+full per-question table is in [`eval/latest.md`](eval/latest.md).
 <!-- /eval-score -->
 
 ---
