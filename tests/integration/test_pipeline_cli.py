@@ -52,6 +52,36 @@ def test_backfill_with_fake_fetch_prunes_by_window(empty_db):
     assert runs(empty_db)[-1] == ("backfill", "success")
 
 
+def test_backfill_keeps_finished_months_when_a_later_month_fails(empty_db):
+    def fetch_failing_in_february(start, end, bbox):
+        if start >= datetime(2024, 2, 1):
+            raise RuntimeError("ERDDAP refused the connection")
+        core, bgc = fake_fetch(start, end, bbox)
+        in_window = lambda df: df[pd.to_datetime(df["time"]).dt.tz_localize(None) < end]  # noqa: E731
+        return in_window(core), in_window(bgc)
+
+    with pytest.raises(RuntimeError, match="refused"):
+        run_backfill(empty_db, FakeEmbedder(), datetime(2024, 1, 1), datetime(2024, 3, 1),
+                     fetch=fetch_failing_in_february, chunk_days=31)
+    with empty_db.connect() as conn:
+        floats = conn.execute(text("SELECT float_id FROM profiles")).scalars().all()
+        run = conn.execute(text("SELECT status, profiles_added FROM ingest_runs ORDER BY run_id DESC")).first()
+    assert floats == ["5905498"]  # January's profile was saved before February failed
+    assert tuple(run) == ("failed", 1)
+
+
+def test_backfill_fetches_month_by_month(empty_db):
+    windows = []
+
+    def recording_fetch(start, end, bbox):
+        windows.append((start, end))
+        return fake_fetch(start, end, bbox)
+
+    run_backfill(empty_db, FakeEmbedder(), datetime(2024, 1, 1), datetime(2024, 3, 1),
+                 fetch=recording_fetch, chunk_days=31)
+    assert windows == [(datetime(2024, 1, 1), datetime(2024, 2, 1)), (datetime(2024, 2, 1), datetime(2024, 3, 1))]
+
+
 def test_failed_refresh_is_recorded(empty_db):
     def broken_fetch(start, end, bbox):
         raise RuntimeError("ERDDAP down")
