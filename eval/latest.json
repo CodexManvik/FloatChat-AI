@@ -1,0 +1,891 @@
+{
+  "api": "https://floatchat-ai-svjw.onrender.com",
+  "ran_at": "2026-11-08 18:16 UTC",
+  "summary": {
+    "cases": 30,
+    "passed": 29,
+    "routing_accuracy": 0.967,
+    "filter_accuracy": 1.0,
+    "answer_pass_rate": 1.0,
+    "median_latency_ms": 2595,
+    "llm_routed": 28,
+    "llm_wrote_answer": 30,
+    "failed_requests": 0
+  },
+  "results": [
+    {
+      "id": "depth-avg",
+      "question": "What is the average temperature at different depths?",
+      "follow_up_of": null,
+      "expected": {
+        "path": "analytical",
+        "intent": [
+          "avg_by_depth"
+        ],
+        "filters": {}
+      },
+      "got": {
+        "path": "analytical",
+        "intent": "avg_by_depth",
+        "filters": {},
+        "answered_by": "analytical"
+      },
+      "status": 200,
+      "latency_ms": 2701,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "depth-avg-arabian",
+      "question": "What is the average temperature at different depths in the Arabian Sea?",
+      "follow_up_of": null,
+      "expected": {
+        "path": "analytical",
+        "intent": [
+          "avg_by_depth"
+        ],
+        "filters": {
+          "region": "Arabian Sea"
+        }
+      },
+      "got": {
+        "path": "analytical",
+        "intent": "avg_by_depth",
+        "filters": {
+          "region": "Arabian Sea"
+        },
+        "answered_by": "analytical"
+      },
+      "status": 200,
+      "latency_ms": 1498,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "depth-avg-bengal-march",
+      "question": "Average salinity by depth in the Bay of Bengal in March 2026",
+      "follow_up_of": null,
+      "expected": {
+        "path": "analytical",
+        "intent": [
+          "avg_by_depth"
+        ],
+        "filters": {
+          "region": "Bay of Bengal",
+          "month_num": 3,
+          "year": 2026
+        }
+      },
+      "got": {
+        "path": "analytical",
+        "intent": "avg_by_depth",
+        "filters": {
+          "region": "Bay of Bengal",
+          "month_num": 3,
+          "year": 2026
+        },
+        "answered_by": "analytical"
+      },
+      "status": 200,
+      "latency_ms": 1712,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "regions",
+      "question": "Compare surface temperature across ocean regions",
+      "follow_up_of": null,
+      "expected": {
+        "path": "analytical",
+        "intent": [
+          "regional_comparison"
+        ],
+        "filters": {}
+      },
+      "got": {
+        "path": "analytical",
+        "intent": "regional_comparison",
+        "filters": {},
+        "answered_by": "analytical"
+      },
+      "status": 200,
+      "latency_ms": 1957,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "regions-warmest",
+      "question": "Which region has the highest average temperature in the upper ocean?",
+      "follow_up_of": null,
+      "expected": {
+        "path": "analytical",
+        "intent": [
+          "regional_comparison"
+        ],
+        "filters": {}
+      },
+      "got": {
+        "path": "analytical",
+        "intent": "regional_comparison",
+        "filters": {},
+        "answered_by": "analytical"
+      },
+      "status": 200,
+      "latency_ms": 1836,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "layers",
+      "question": "Show temperature and salinity by depth layer",
+      "follow_up_of": null,
+      "expected": {
+        "path": "analytical",
+        "intent": [
+          "depth_ranges"
+        ],
+        "filters": {}
+      },
+      "got": {
+        "path": "analytical",
+        "intent": "depth_ranges",
+        "filters": {},
+        "answered_by": "analytical"
+      },
+      "status": 200,
+      "latency_ms": 1807,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "layers-southern",
+      "question": "Compare surface and deep water in the Southern Indian Ocean",
+      "follow_up_of": null,
+      "expected": {
+        "path": "analytical",
+        "intent": [
+          "depth_ranges"
+        ],
+        "filters": {
+          "region": "Southern Indian Ocean"
+        }
+      },
+      "got": {
+        "path": "analytical",
+        "intent": "depth_ranges",
+        "filters": {
+          "region": "Southern Indian Ocean"
+        },
+        "answered_by": "analytical"
+      },
+      "status": 200,
+      "latency_ms": 1931,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "monthly",
+      "question": "Show the monthly trend of surface temperature",
+      "follow_up_of": null,
+      "expected": {
+        "path": "analytical",
+        "intent": [
+          "temporal_trends"
+        ],
+        "filters": {}
+      },
+      "got": {
+        "path": "analytical",
+        "intent": "temporal_trends",
+        "filters": {},
+        "answered_by": "analytical"
+      },
+      "status": 200,
+      "latency_ms": 1818,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "monthly-equator",
+      "question": "How has the average temperature near the equator changed over time?",
+      "follow_up_of": null,
+      "expected": {
+        "path": "analytical",
+        "intent": [
+          "temporal_trends"
+        ],
+        "filters": {
+          "region": "Equatorial Indian Ocean"
+        }
+      },
+      "got": {
+        "path": "analytical",
+        "intent": "temporal_trends",
+        "filters": {
+          "region": "Equatorial Indian Ocean"
+        },
+        "answered_by": "analytical"
+      },
+      "status": 200,
+      "latency_ms": 2003,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "floats-active",
+      "question": "Give me a summary of the most active floats",
+      "follow_up_of": null,
+      "expected": {
+        "path": "analytical",
+        "intent": [
+          "float_summary"
+        ],
+        "filters": {}
+      },
+      "got": {
+        "path": "analytical",
+        "intent": "float_summary",
+        "filters": {},
+        "answered_by": "analytical"
+      },
+      "status": 200,
+      "latency_ms": 3129,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "floats-arabian",
+      "question": "Summarize the floats operating in the Arabian Sea",
+      "follow_up_of": null,
+      "expected": {
+        "path": "analytical",
+        "intent": [
+          "float_summary"
+        ],
+        "filters": {
+          "region": "Arabian Sea"
+        }
+      },
+      "got": {
+        "path": "analytical",
+        "intent": "float_summary",
+        "filters": {
+          "region": "Arabian Sea"
+        },
+        "answered_by": "analytical"
+      },
+      "status": 200,
+      "latency_ms": 2463,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "bgc-oxygen",
+      "question": "Average dissolved oxygen by ocean zone",
+      "follow_up_of": null,
+      "expected": {
+        "path": "analytical",
+        "intent": [
+          "bgc_analysis"
+        ],
+        "filters": {}
+      },
+      "got": {
+        "path": "analytical",
+        "intent": "bgc_analysis",
+        "filters": {
+          "has_oxygen": true
+        },
+        "answered_by": "analytical"
+      },
+      "status": 200,
+      "latency_ms": 1996,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "bgc-chlorophyll-bengal",
+      "question": "Compare chlorophyll levels across zones in the Bay of Bengal",
+      "follow_up_of": null,
+      "expected": {
+        "path": "analytical",
+        "intent": [
+          "bgc_analysis"
+        ],
+        "filters": {
+          "region": "Bay of Bengal"
+        }
+      },
+      "got": {
+        "path": "analytical",
+        "intent": "bgc_analysis",
+        "filters": {
+          "region": "Bay of Bengal",
+          "has_chlorophyll": true
+        },
+        "answered_by": "analytical"
+      },
+      "status": 200,
+      "latency_ms": 2165,
+      "router": "keywords",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "bgc-ph",
+      "question": "What is the average pH in each ocean zone?",
+      "follow_up_of": null,
+      "expected": {
+        "path": "analytical",
+        "intent": [
+          "bgc_analysis"
+        ],
+        "filters": {}
+      },
+      "got": {
+        "path": "analytical",
+        "intent": "bgc_analysis",
+        "filters": {
+          "has_ph": true
+        },
+        "answered_by": "analytical"
+      },
+      "status": 200,
+      "latency_ms": 1672,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "count-arabian",
+      "question": "How many profiles were recorded in the Arabian Sea?",
+      "follow_up_of": null,
+      "expected": {
+        "path": "analytical",
+        "intent": [
+          "custom"
+        ],
+        "filters": {
+          "region": "Arabian Sea"
+        }
+      },
+      "got": {
+        "path": "analytical",
+        "intent": "custom",
+        "filters": {
+          "region": "Arabian Sea"
+        },
+        "answered_by": "analytical"
+      },
+      "status": 200,
+      "latency_ms": 181,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "max-bengal-2026",
+      "question": "What was the maximum temperature recorded in the Bay of Bengal in 2026?",
+      "follow_up_of": null,
+      "expected": {
+        "path": "analytical",
+        "intent": [
+          "custom"
+        ],
+        "filters": {
+          "region": "Bay of Bengal",
+          "year": 2026
+        }
+      },
+      "got": {
+        "path": "analytical",
+        "intent": "custom",
+        "filters": {
+          "region": "Bay of Bengal",
+          "year": 2026
+        },
+        "answered_by": "analytical"
+      },
+      "status": 200,
+      "latency_ms": 2882,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "mean-salinity-1000m",
+      "question": "What is the mean salinity at 1000 m?",
+      "follow_up_of": null,
+      "expected": {
+        "path": "analytical",
+        "intent": [
+          "custom",
+          "avg_by_depth"
+        ],
+        "filters": {}
+      },
+      "got": {
+        "path": "analytical",
+        "intent": "avg_by_depth",
+        "filters": {},
+        "answered_by": "analytical"
+      },
+      "status": 200,
+      "latency_ms": 2162,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "find-equator-march",
+      "question": "Show me salinity profiles near the equator in March 2026",
+      "follow_up_of": null,
+      "expected": {
+        "path": "semantic",
+        "intent": null,
+        "filters": {
+          "region": "Equatorial Indian Ocean",
+          "month_num": 3,
+          "year": 2026
+        }
+      },
+      "got": {
+        "path": "semantic",
+        "intent": null,
+        "filters": {
+          "region": "Equatorial Indian Ocean",
+          "month_num": 3,
+          "year": 2026
+        },
+        "answered_by": "semantic"
+      },
+      "status": 200,
+      "latency_ms": 7575,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "find-low-oxygen",
+      "question": "Which floats measured low oxygen in the Arabian Sea?",
+      "follow_up_of": null,
+      "expected": {
+        "path": "semantic",
+        "intent": null,
+        "filters": {
+          "region": "Arabian Sea",
+          "has_oxygen": true
+        }
+      },
+      "got": {
+        "path": "semantic",
+        "intent": null,
+        "filters": {
+          "region": "Arabian Sea",
+          "has_oxygen": true
+        },
+        "answered_by": "semantic"
+      },
+      "status": 200,
+      "latency_ms": 3701,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "find-bengal",
+      "question": "Find profiles from the Bay of Bengal",
+      "follow_up_of": null,
+      "expected": {
+        "path": "semantic",
+        "intent": null,
+        "filters": {
+          "region": "Bay of Bengal"
+        }
+      },
+      "got": {
+        "path": "semantic",
+        "intent": null,
+        "filters": {
+          "region": "Bay of Bengal"
+        },
+        "answered_by": "semantic"
+      },
+      "status": 200,
+      "latency_ms": 2894,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "find-chlorophyll-southern",
+      "question": "Show me floats with chlorophyll sensors in the Southern Indian Ocean",
+      "follow_up_of": null,
+      "expected": {
+        "path": "semantic",
+        "intent": null,
+        "filters": {
+          "region": "Southern Indian Ocean",
+          "has_chlorophyll": true
+        }
+      },
+      "got": {
+        "path": "semantic",
+        "intent": null,
+        "filters": {
+          "region": "Southern Indian Ocean",
+          "has_chlorophyll": true
+        },
+        "answered_by": "semantic"
+      },
+      "status": 200,
+      "latency_ms": 10737,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "find-indonesia-january",
+      "question": "Profiles near Indonesia in January 2026",
+      "follow_up_of": null,
+      "expected": {
+        "path": "semantic",
+        "intent": null,
+        "filters": {
+          "region": "Eastern Indian Ocean",
+          "month_num": 1,
+          "year": 2026
+        }
+      },
+      "got": {
+        "path": "semantic",
+        "intent": null,
+        "filters": {
+          "region": "Eastern Indian Ocean",
+          "month_num": 1,
+          "year": 2026
+        },
+        "answered_by": "semantic"
+      },
+      "status": 200,
+      "latency_ms": 10217,
+      "router": "keywords",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "no-data-red-sea",
+      "question": "Describe recent profiles from the Red Sea",
+      "follow_up_of": null,
+      "expected": {
+        "path": "semantic",
+        "intent": null,
+        "filters": {
+          "region": "Red Sea & Gulf of Aden"
+        }
+      },
+      "got": {
+        "path": "semantic",
+        "intent": null,
+        "filters": {
+          "region": "Red Sea & Gulf of Aden"
+        },
+        "answered_by": "semantic"
+      },
+      "status": 200,
+      "latency_ms": 4217,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "find-nitrate-arabian",
+      "question": "Find nitrate measurements in the Arabian Sea",
+      "follow_up_of": null,
+      "expected": {
+        "path": "semantic",
+        "intent": null,
+        "filters": {
+          "region": "Arabian Sea",
+          "has_nitrate": true
+        }
+      },
+      "got": {
+        "path": "semantic",
+        "intent": null,
+        "filters": {
+          "region": "Arabian Sea",
+          "has_nitrate": true
+        },
+        "answered_by": "semantic"
+      },
+      "status": 200,
+      "latency_ms": 11665,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "find-thermocline",
+      "question": "Show me profiles with a strong thermocline",
+      "follow_up_of": null,
+      "expected": {
+        "path": "semantic",
+        "intent": null,
+        "filters": {}
+      },
+      "got": {
+        "path": "semantic",
+        "intent": null,
+        "filters": {},
+        "answered_by": "semantic"
+      },
+      "status": 200,
+      "latency_ms": 7732,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "find-bengal-september",
+      "question": "Profiles in the Bay of Bengal in September 2026",
+      "follow_up_of": null,
+      "expected": {
+        "path": "semantic",
+        "intent": null,
+        "filters": {
+          "region": "Bay of Bengal",
+          "month_num": 9,
+          "year": 2026
+        }
+      },
+      "got": {
+        "path": "analytical",
+        "intent": "custom",
+        "filters": {
+          "region": "Bay of Bengal",
+          "month_num": 9,
+          "year": 2026
+        },
+        "answered_by": "analytical"
+      },
+      "status": 200,
+      "latency_ms": 4907,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": false,
+      "filters": true,
+      "answer": true,
+      "note": "routed to analytical/custom"
+    },
+    {
+      "id": "follow-region",
+      "question": "now only the Bay of Bengal",
+      "follow_up_of": "depth-avg",
+      "expected": {
+        "path": "analytical",
+        "intent": [
+          "avg_by_depth"
+        ],
+        "filters": {
+          "region": "Bay of Bengal"
+        }
+      },
+      "got": {
+        "path": "analytical",
+        "intent": "avg_by_depth",
+        "filters": {
+          "region": "Bay of Bengal"
+        },
+        "answered_by": "analytical"
+      },
+      "status": 200,
+      "latency_ms": 3397,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "follow-month",
+      "question": "and just in March",
+      "follow_up_of": "depth-avg-arabian",
+      "expected": {
+        "path": "analytical",
+        "intent": [
+          "avg_by_depth"
+        ],
+        "filters": {
+          "region": "Arabian Sea",
+          "month_num": 3
+        }
+      },
+      "got": {
+        "path": "analytical",
+        "intent": "avg_by_depth",
+        "filters": {
+          "region": "Arabian Sea",
+          "month_num": 3
+        },
+        "answered_by": "analytical"
+      },
+      "status": 200,
+      "latency_ms": 5795,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "follow-monthly-arabian",
+      "question": "now for the Arabian Sea",
+      "follow_up_of": "monthly",
+      "expected": {
+        "path": "analytical",
+        "intent": [
+          "temporal_trends"
+        ],
+        "filters": {
+          "region": "Arabian Sea"
+        }
+      },
+      "got": {
+        "path": "analytical",
+        "intent": "temporal_trends",
+        "filters": {
+          "region": "Arabian Sea"
+        },
+        "answered_by": "analytical"
+      },
+      "status": 200,
+      "latency_ms": 2489,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    },
+    {
+      "id": "follow-oxygen",
+      "question": "only the ones measuring oxygen",
+      "follow_up_of": "find-bengal",
+      "expected": {
+        "path": "semantic",
+        "intent": null,
+        "filters": {
+          "region": "Bay of Bengal",
+          "has_oxygen": true
+        }
+      },
+      "got": {
+        "path": "semantic",
+        "intent": null,
+        "filters": {
+          "region": "Bay of Bengal",
+          "has_oxygen": true
+        },
+        "answered_by": "semantic"
+      },
+      "status": 200,
+      "latency_ms": 13054,
+      "router": "llm",
+      "llm_wrote_answer": true,
+      "routing": true,
+      "filters": true,
+      "answer": true,
+      "note": null
+    }
+  ]
+}
