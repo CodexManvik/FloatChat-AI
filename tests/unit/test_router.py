@@ -78,3 +78,12 @@ def test_llm_prompt_includes_history():
     chat = fake_llm({"path": "analytical", "intent": "avg_by_depth", "filters": {}, "question": "q"})
     llm_route("now only the Arabian Sea", [PREVIOUS_SQL], chat)
     assert "What is the average temperature at different depths?" in chat.calls[0][0]
+
+
+def test_llm_prompt_sends_requests_for_profiles_to_search():
+    # A bare "Profiles in <place> in <month>" asks to see profiles, not for a statistic
+    chat = fake_llm({"path": "semantic", "intent": None, "filters": {}, "question": "q"})
+    llm_route("Profiles near Indonesia in January 2026", [], chat)
+    prompt = chat.calls[0][0]
+    assert "even when it names a place or a date" in prompt
+    assert "Profiles off Sri Lanka in June 2026" in prompt
