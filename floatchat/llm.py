@@ -27,6 +27,7 @@ def is_configured() -> bool:
     return True
 
 
+# Reasoning models (such as gpt-oss) spend part of max_tokens thinking before they answer, so the limits leave room
 def _payload(prompt: str, system: str | None, temperature: float, max_tokens: int, json_mode: bool,
              stream: bool = False) -> dict:
     messages = [{"role": "system", "content": system}] if system else []
@@ -58,7 +59,7 @@ def _post(payload: dict, stream: bool = False):
         _sleep(min(wait, MAX_RETRY_WAIT))
 
 
-def chat(prompt: str, system: str | None = None, temperature: float = 0.2, max_tokens: int = 600,
+def chat(prompt: str, system: str | None = None, temperature: float = 0.2, max_tokens: int = 1200,
          json_mode: bool = False) -> str | None:
     if not is_configured():
         return None
@@ -71,7 +72,7 @@ def chat(prompt: str, system: str | None = None, temperature: float = 0.2, max_t
 
 
 def chat_stream(prompt: str, system: str | None = None, temperature: float = 0.2,
-                max_tokens: int = 600) -> Iterator[str]:
+                max_tokens: int = 1200) -> Iterator[str]:
     """Yield the answer text as the LLM writes it; yields nothing if no LLM is available or the call fails."""
     if not is_configured():
         return

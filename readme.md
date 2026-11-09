@@ -1,8 +1,12 @@
 # 🌊 FloatChat: talk to the ocean
 
-**Ask questions about real ocean data in plain English, and get answers with maps and charts.**
+**Ask questions about a year of real ocean data in plain English. FloatChat writes the SQL or searches the
+profiles, shows every step it took, and draws the charts.**
 
-![FloatChat overview](docs/screenshots/overview.png)
+![FloatChat landing page](docs/screenshots/web-landing.png)
+
+**Live API:** [floatchat-ai-svjw.onrender.com/docs](https://floatchat-ai-svjw.onrender.com/docs) ·
+**Benchmark:** 29/30 questions fully correct ([details](eval/latest.md)) · **Deploy your own:** [DEPLOY.md](DEPLOY.md)
 
 **Contents:** [What FloatChat is](#-what-floatchat-is) · [How it's built](#-how-its-built) ·
 [How well it works](#-how-well-it-works) · [Run it on your machine](#-run-it-on-your-machine) ·
@@ -43,28 +47,37 @@ becoming data engineers.
 
 | You ask… | FloatChat… |
 |---|---|
-| *"What is the average temperature at different depths?"* | spots a statistical question → runs SQL on PostgreSQL → answers with a temperature/salinity vs depth chart and the SQL it used |
-| *"Show me salinity profiles near the equator in March 2024"* | spots a descriptive question → reads "equator" and "March 2024" as filters → searches its vector index of profile descriptions → shows the matching profiles on a map and plots them |
-| *"Which floats measured low oxygen in the Arabian Sea?"* | limits the search to oxygen-measuring floats in the Arabian Sea → lists them with their oxygen minimum and depth |
+| *"What is the average temperature at different depths in the Bay of Bengal?"* | the router sees a statistical question about one region → runs the depth-average SQL with a region filter → explains the pattern, with the chart, the data and the SQL |
+| *"now only the Arabian Sea"* | understands a follow-up → keeps the analysis, swaps the region |
+| *"Show me salinity profiles near the equator in March 2026"* | sees a descriptive question → reads "equator", "March" and "2026" as filters → searches its vector index of profile descriptions → shows the matching profiles on a map |
+| *"How many profiles were recorded in the Arabian Sea?"* | no template fits → the LLM writes SQL, checked as read-only, and repaired from the database error if it fails |
 
-| Statistical question → SQL + chart | Descriptive question → search + map & profiles |
+Every answer opens with a **run log**: what was understood, each SQL attempt with its rows and timing, the search,
+and who wrote the text, so every number can be checked against the query that produced it.
+
+| Statistical question → SQL, chart and data | Descriptive question → search and map |
 |---|---|
-| ![SQL answer](docs/screenshots/chat-sql.png) | ![RAG answer](docs/screenshots/chat-rag.png) |
+| ![SQL answer with run log](docs/screenshots/web-chat-sql.png) | ![Search answer with map](docs/screenshots/web-chat-search.png) |
+
+Each float has its own page: trajectory, latest profile, a depth-time section and a temperature-salinity diagram.
+
+![Float page](docs/screenshots/web-float.png)
 
 ### The data in this demo
 
-The repo ships with **real Argo observations** from the **Indian Ocean, January–March 2024**, downloaded from the
-[Ifremer ERDDAP](https://erddap.ifremer.fr/erddap/) server:
+All data are **real Argo observations** from the **Indian Ocean**, downloaded from the
+[Ifremer ERDDAP](https://erddap.ifremer.fr/erddap/) server, keeping only values that passed Argo's quality control:
 
-- **437 floats**, **3,898 profiles**, **88,361 measurements** from the surface down to 2,000 m, keeping only values
-  that passed Argo's quality control
-- **Biogeochemical (BGC) floats** that also measure dissolved oxygen (52 floats), chlorophyll (57), nitrate (32)
-  and pH (18). The oxygen data shows the Arabian Sea's oxygen minimum zone clearly.
-- Each profile is labelled with a region: Arabian Sea, Bay of Bengal, Equatorial, Southern and Eastern Indian Ocean,
-  Red Sea & Gulf of Aden
+| | Live demo | Bundled snapshot (local setup) |
+|---|---|---|
+| Period | rolling last 12 months, refreshed nightly | January to March 2024 |
+| Floats | about 660 (107 measuring oxygen) | 437 (52 measuring oxygen) |
+| Profiles | about 20,000 | 3,898 |
+| Measurements | about 455,000 | 88,361 |
 
-The **live demo** keeps a rolling **last 12 months** of the same region (about 660 floats and 20,000 profiles),
-refreshed every night by GitHub Actions. You can download a different period or ocean region with one command (see
+BGC floats also measure chlorophyll, nitrate and pH; the oxygen data shows the Arabian Sea's oxygen minimum zone
+clearly. Each profile is labelled with a region: Arabian Sea, Bay of Bengal, Equatorial, Southern and Eastern Indian
+Ocean, Red Sea & Gulf of Aden. You can download a different period or ocean region with one command (see
 [Using other data](#using-other-data)).
 
 ---
@@ -73,9 +86,9 @@ refreshed every night by GitHub Actions. You can download a different period or 
 
 ```
  ┌─────────────┐  HTTP  ┌──────────────── API (FastAPI) ─────────────────────────────────────┐
- │  Streamlit  │ ─────► │ POST /query, /query/stream (live steps + tokens)                      │
- │  (app.py)   │ ◄───── │   router (LLM, keyword fallback): SQL or search? which filters?      │
- └─────────────┘  JSON  │   ├─ SQL: template or LLM-written SQL, repaired from DB errors ─► PG  │
+ │  Next.js    │ ─────► │ POST /query, /query/stream (live steps + tokens)                      │
+ │  (web/)     │ ◄───── │   router (LLM, keyword fallback): SQL or search? which filters?      │
+ └─ Vercel ────┘  JSON  │   ├─ SQL: template or LLM-written SQL, repaired from DB errors ─► PG  │
                   / SSE │   └─ search: pgvector + filters ─► matching profiles                  │
                         │   LLM (e.g. Groq) explains the result · every step is reported        │
                         │ rate limits · LLM budget · answer cache · query log                   │
@@ -148,7 +161,10 @@ and AI logic stays in the API.
   temperature-salinity diagram; a comparison page overlays two floats.
 - Colours for data are the oceanographers' own cmocean scales; light and dark themes follow the system setting.
 
-### 5b. The interim Streamlit app (`app.py`)
+The Streamlit app that served as the interim UI is retired to `legacy/streamlit/` (it still runs; see its README).
+
+<details>
+<summary>What the interim Streamlit app did</summary>
 
 
 - **Overview page:** headline numbers, a live map of every float coloured by surface temperature, profiles per
@@ -162,12 +178,14 @@ and AI logic stays in the API.
 - Follow-up questions work: the last three turns are sent along, so *"now only the Arabian Sea"* keeps the analysis.
 - The sidebar shows whether the database, vector index and LLM are connected.
 
+</details>
+
 ### 6. Packaging, deployment and tests
 
 | Component | What it does |
 |---|---|
-| `Dockerfile.api`, `Dockerfile` | The API image (with the embedding model built in) and the Streamlit image. |
-| `docker-compose.yml` | Runs PostgreSQL + pgvector, the API (which loads the data on first start) and the frontend. |
+| `Dockerfile.api`, `web/Dockerfile` | The API image (with the embedding model built in) and the web app image (Next.js standalone server). |
+| `docker-compose.yml` | Runs PostgreSQL + pgvector, the API (which loads the data on first start) and the web app. |
 | `.github/workflows/` | `ci.yml` (lint, tests, container memory check), `refresh.yml` (daily data), `backfill.yml` (first load), `eval.yml` (weekly benchmark against the live API). |
 | `eval/` | 30 benchmark questions and the runner that scores the API (see [How well it works](#-how-well-it-works)). |
 | `DEPLOY.md` | Step-by-step free deployment: Neon, Render, Vercel, GitHub Actions, cron-job.org and Groq. |
@@ -178,7 +196,6 @@ and AI logic stays in the API.
 ```
 FloatChat-AI/
 ├── web/                    # Next.js web app (landing, chat, float pages)
-├── app.py                  # interim Streamlit frontend
 ├── api/                    # FastAPI app: endpoints, rate limits, caches
 ├── floatchat/              # core: SQL agent, search, answers, embedder, LLM client, database
 ├── pipeline/               # ERDDAP → standard depths → descriptions/embeddings → Postgres
@@ -187,9 +204,8 @@ FloatChat-AI/
 ├── data/                   # bundled Argo snapshot + embedding cache
 ├── tests/                  # unit/ and integration/
 ├── docs/                   # screenshots, design specs and plans
-├── Dockerfile.api, Dockerfile, docker-compose.yml, requirements*.txt, .env.example, DEPLOY.md
-├── streamlit_app.py, components/, styles/, utils/   # experimental dashboard (WIP, see README_DASHBOARD.md)
-└── legacy/                 # early prototype scripts, kept for reference
+├── Dockerfile.api, docker-compose.yml, requirements*.txt, .env.example, DEPLOY.md
+└── legacy/                 # the retired Streamlit apps and early prototype scripts, kept for reference
 ```
 
 ---
@@ -234,7 +250,7 @@ full per-question table is in [`eval/latest.md`](eval/latest.md).
 - *(optional)* a free **[Groq API key](https://console.groq.com/keys)**, so the AI can write explanations
 
 You don't need to download any data, models or databases by hand; Docker fetches everything. The app uses ports
-**8501** (app), **8000** (API) and **5433** (database).
+**3000** (web app), **8000** (API) and **5433** (database).
 
 ### Option A: Docker (recommended)
 
@@ -271,16 +287,16 @@ retired that model, choose any chat model listed in the Groq console.
 docker compose up --build
 ```
 
-The first run takes a few minutes while Docker downloads Python packages and builds the image. The backend then
-loads the data in about 30 seconds. You're ready when the log shows `Uvicorn running on http://0.0.0.0:8000`.
+The first run takes a few minutes while Docker downloads packages and builds the images. The backend then loads the
+data in about 30 seconds. You're ready when the log shows `Uvicorn running on http://0.0.0.0:8000`.
 
 **4. Open the app**
 
-- App: **http://localhost:8501**
+- Web app: **http://localhost:3000**
 - API docs: http://localhost:8000/docs
 
-The sidebar should show green dots for PostgreSQL and the vector index. The LLM dot is green if your key works and
-amber if no LLM is configured.
+Ask a question. Without an LLM key the run log says *keyword fallback* and the answer is built from the data alone;
+with a key, the router and the explanations come from the LLM.
 
 **Stopping and restarting**
 
@@ -297,7 +313,7 @@ which listens on port 5433 and matches the settings in `.env.example`.
 ```bash
 python -m venv .venv
 .venv\Scripts\activate                 # macOS/Linux: source .venv/bin/activate
-pip install -r requirements-dev.txt    # API, frontend and test tools
+pip install -r requirements-dev.txt    # API and test tools
 cp .env.example .env                   # add your LLM key if you have one
 docker compose up -d db                # PostgreSQL + pgvector on port 5433
 
@@ -327,10 +343,10 @@ See [DEPLOY.md](DEPLOY.md): Neon (database), Render (API), Vercel (web app), Git
 
 | Problem | Fix |
 |---|---|
-| `port is already allocated` | Something else is using 8501, 8000 or 5433. Stop it, or change the left-hand port in `docker-compose.yml`. |
+| `port is already allocated` | Something else is using 3000, 8000 or 5433. Stop it, or change the left-hand port in `docker-compose.yml`. |
 | App says it can't reach the API | The backend is still loading data; wait for `Uvicorn running…` in the logs (`docker compose logs -f backend`). |
-| LLM dot is red: *missing or invalid LLM_API_KEY* | Check the key in `.env`, then run `docker compose up -d backend`. |
-| LLM dot is red: *cannot connect* | Check `LLM_BASE_URL`. If you use Ollama on your own machine while the app runs in Docker, use `http://host.docker.internal:11434/v1`. |
+| The run log always says *keyword fallback* | The LLM isn't reachable: `http://localhost:8000/health` shows why. Check the key in `.env`, then run `docker compose up -d backend`. |
+| `/health` says *cannot connect* to the LLM | Check `LLM_BASE_URL`. If you use Ollama on your own machine while the app runs in Docker, use `http://host.docker.internal:11434/v1`. |
 | You want a clean start | `docker compose down -v`, then `docker compose up --build`. |
 
 ---
@@ -342,7 +358,7 @@ Questions to try:
 - What is the average temperature at different depths?
 - Compare surface temperature across ocean regions
 - Show average salinity by depth range
-- Show me salinity profiles near the equator in March 2024
+- Show me salinity profiles near the equator in March 2026 (March 2024 on the bundled snapshot)
 - Which floats measured low oxygen in the Arabian Sea?
 - Average dissolved oxygen by ocean zone
 - Show the monthly temperature trend
@@ -350,11 +366,12 @@ Questions to try:
 
 Tips:
 
-- Words like *average, compare, trend, count, summary* trigger the SQL path. Descriptive questions search the
-  profiles; naming a region, month or "oxygen" narrows the search.
-- **Demo links:** `http://localhost:8501/?q=Average%20dissolved%20oxygen%20by%20ocean%20zone` opens the chat with that
-  question already asked. They're handy in presentations.
-- The **Data & export** tab under an answer downloads its profiles as CSV, NetCDF or ASCII.
+- Statistics (averages, comparisons, trends, counts) go to SQL; questions about particular profiles or floats go to
+  search. Naming a region, month, year or sensor narrows either one.
+- Follow-ups work: *"now only the Bay of Bengal"*, *"and just in March"*, *"only the ones measuring oxygen"*.
+- **Demo links:** `/chat?q=Average%20dissolved%20oxygen%20by%20ocean%20zone` opens the chat with that question
+  already asked. They're handy in presentations.
+- Search results and float pages download their profiles as CSV, NetCDF or ASCII.
 
 ### Using other data
 
@@ -373,12 +390,13 @@ New data needs new embeddings, which takes a few minutes on a CPU. The region fi
 ## 🗺️ Limitations & roadmap
 
 - The bundled local data is a three-month snapshot; the deployed version keeps a rolling 12 months, refreshed daily.
-- Without an LLM, deciding between SQL and search falls back to keywords, which miss free phrasings (see the evaluation).
-- Next: a custom web app (Next.js) with a landing page that streams each answer's steps live from `/query/stream`.
-- Region boundaries are approximate boxes.
-- `streamlit_app.py` and `components/` are an experimental, feature-heavy dashboard that still uses mock data in
-  places. They are not part of the demo (see `README_DASHBOARD.md`).
-- `legacy/` holds early prototype scripts that are no longer used.
+- Without an LLM, deciding between SQL and search falls back to keywords, which miss free phrasings (see the
+  evaluation). The benchmark's one remaining miss is a borderline question routed to SQL instead of search.
+- Region boundaries are approximate boxes, and the data covers the Indian Ocean only.
+- Free hosting: the API sleeps when idle (a keep-awake ping covers this) and the LLM has a daily budget, after which
+  answers are built from the data alone.
+- Ideas: more ocean basins, comparing a float with the regional average, and saved conversations.
+- `legacy/` holds the retired Streamlit apps and early prototype scripts.
 
 ## 🙏 Acknowledgments
 

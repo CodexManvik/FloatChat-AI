@@ -1,5 +1,6 @@
 import { ArrowRight, ArrowUpRight } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
+import { connection } from "next/server";
 import { AskBox } from "@/components/ask-box";
 import { Globe } from "@/components/globe";
 import { HowItWorks } from "@/components/how-it-works";
@@ -125,6 +126,8 @@ const STACK = [
 
 export default async function Home() {
   const [stats, floats, benchmark] = await Promise.all([load(getStats), load(getFloats), load(getBenchmark)]);
+  // No data (the API was unreachable while prerendering, as in a Docker build): render on each request instead
+  if (!stats || !floats) await connection();
 
   return (
     <>

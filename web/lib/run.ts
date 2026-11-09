@@ -65,6 +65,20 @@ export function historyFrom(runs: Run[], turns = 3) {
     }));
 }
 
+/**
+ * A finished analytical answer is "**Title**", the rows as a list, then "**What this means:** ...". The rows are
+ * already in the chart and the data table, so the compact view keeps the title and the explanation.
+ * Returns null when there is no explanation (for example when the LLM was unavailable).
+ */
+export function compactAnalytical(answer: string): { title: string; insight: string } | null {
+  const marker = "**What this means:**";
+  const at = answer.indexOf(marker);
+  if (at === -1) return null;
+  const insight = answer.slice(at).trim();
+  if (insight.length <= marker.length) return null;
+  return { title: answer.split("\n")[0].trim(), insight };
+}
+
 const SENSOR_LABELS: Record<string, string> = {
   has_oxygen: "oxygen",
   has_chlorophyll: "chlorophyll",

@@ -135,7 +135,8 @@ def _analytical_answer(route: Route, agent: SqlAgent, writer: _Writer, step) -> 
     writer.write(f"**{title}**\n\n{format_results_for_display(df, intent)}")
     insight = writer.llm(
         f"Question: {route.question}\n\nSQL result (first rows):\n{df.head(15).to_string(index=False)}\n\n"
-        "In 2-3 sentences, explain the main oceanographic pattern in this result.",
+        "In 2-3 sentences of plain prose, explain the main oceanographic pattern in this result. Do not use a list, "
+        "table or heading, and do not restate the rows one by one.",
         prefix="\n\n**What this means:** ",
     )
     return {

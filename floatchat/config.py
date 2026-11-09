@@ -36,7 +36,7 @@ QUERY_LIMIT_PER_DAY = int(os.getenv("QUERY_LIMIT_PER_DAY", "100"))
 FRONTEND_TOKEN = os.getenv("FRONTEND_TOKEN", "")
 ALLOWED_ORIGINS = [
     origin.strip()
-    for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8501").split(",")
+    for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
     if origin.strip()
 ]
 
