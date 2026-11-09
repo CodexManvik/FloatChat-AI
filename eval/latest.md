@@ -1,15 +1,15 @@
-## FloatChat evaluation — 29/30 questions fully correct
+## FloatChat evaluation — 30/30 questions fully correct
 
-Run against `https://floatchat-ai-svjw.onrender.com` on 2026-11-08 18:16 UTC.
+Run against `https://floatchat-ai-svjw.onrender.com` on 2026-11-09 05:16 UTC.
 
 | Metric | Score |
 |---|---|
-| Routing accuracy (SQL vs search, and which analysis) | 97% |
+| Routing accuracy (SQL vs search, and which analysis) | 100% |
 | Filter accuracy (region, month, year, sensor) | 100% |
 | Answer checks passed | 100% |
-| Median latency | 2595 ms |
-| Understood by the LLM router | 28/30 |
-| Answers written by the LLM | 30/30 |
+| Median latency | 1929 ms |
+| Understood by the LLM router | 30/30 |
+| Answers written by the LLM | 28/30 |
 
 | Case | Question | Routing | Filters | Answer | Notes |
 |---|---|---|---|---|---|
@@ -38,7 +38,7 @@ Run against `https://floatchat-ai-svjw.onrender.com` on 2026-11-08 18:16 UTC.
 | `no-data-red-sea` | Describe recent profiles from the Red Sea | ✅ | ✅ | ✅ |  |
 | `find-nitrate-arabian` | Find nitrate measurements in the Arabian Sea | ✅ | ✅ | ✅ |  |
 | `find-thermocline` | Show me profiles with a strong thermocline | ✅ | ✅ | ✅ |  |
-| `find-bengal-september` | Profiles in the Bay of Bengal in September 2026 | ❌ | ✅ | ✅ | routed to analytical/custom |
+| `find-bengal-september` | Profiles in the Bay of Bengal in September 2026 | ✅ | ✅ | ✅ |  |
 | `follow-region` | now only the Bay of Bengal *(follow-up to depth-avg)* | ✅ | ✅ | ✅ |  |
 | `follow-month` | and just in March *(follow-up to depth-avg-arabian)* | ✅ | ✅ | ✅ |  |
 | `follow-monthly-arabian` | now for the Arabian Sea *(follow-up to monthly)* | ✅ | ✅ | ✅ |  |

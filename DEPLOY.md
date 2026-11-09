@@ -118,8 +118,10 @@ shared secret is needed.
    https://floatchat.vercel.app,http://localhost:3000
    ```
 
-5. Open the site and ask a question. The run log should fill in step by step and the answer should stream in.
-   If you later add a custom domain on Vercel, add it to `ALLOWED_ORIGINS` too.
+5. In **Vercel → your project → Settings → Environment Variables**, add `NEXT_PUBLIC_SITE_URL` = that URL and
+   redeploy, so shared links show your site's preview image (the default is the original demo's address).
+6. Open the site and ask a question. The run log should fill in step by step and the answer should stream in.
+   If you later add a custom domain on Vercel, add it to `ALLOWED_ORIGINS` and `NEXT_PUBLIC_SITE_URL` too.
 
 ## 6. Streamlit Community Cloud: the old interim UI (optional)
 

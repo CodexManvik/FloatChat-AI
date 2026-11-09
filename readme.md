@@ -3,10 +3,12 @@
 **Ask questions about a year of real ocean data in plain English. FloatChat writes the SQL or searches the
 profiles, shows every step it took, and draws the charts.**
 
-![FloatChat landing page](docs/screenshots/web-landing.png)
+### ▶ Try it live: [float-chat-ai-teal.vercel.app](https://float-chat-ai-teal.vercel.app)
+
+[![FloatChat landing page](docs/screenshots/web-landing.png)](https://float-chat-ai-teal.vercel.app)
 
 **Live API:** [floatchat-ai-svjw.onrender.com/docs](https://floatchat-ai-svjw.onrender.com/docs) ·
-**Benchmark:** 29/30 questions fully correct ([details](eval/latest.md)) · **Deploy your own:** [DEPLOY.md](DEPLOY.md)
+**Benchmark:** 30/30 questions fully correct ([details](eval/latest.md)) · **Deploy your own:** [DEPLOY.md](DEPLOY.md)
 
 **Contents:** [What FloatChat is](#-what-floatchat-is) · [How it's built](#-how-its-built) ·
 [How well it works](#-how-well-it-works) · [Run it on your machine](#-run-it-on-your-machine) ·
@@ -68,7 +70,7 @@ Each float has its own page: trajectory, latest profile, a depth-time section an
 All data are **real Argo observations** from the **Indian Ocean**, downloaded from the
 [Ifremer ERDDAP](https://erddap.ifremer.fr/erddap/) server, keeping only values that passed Argo's quality control:
 
-| | Live demo | Bundled snapshot (local setup) |
+| | [Live demo](https://float-chat-ai-teal.vercel.app) | Bundled snapshot (local setup) |
 |---|---|---|
 | Period | rolling last 12 months, refreshed nightly | January to March 2024 |
 | Floats | about 660 (107 measuring oxygen) | 437 (52 measuring oxygen) |
@@ -229,14 +231,15 @@ every Monday (`eval.yml`) and shows the table in the job summary. Without an LLM
 template questions and simple follow-ups; the free-phrasing and custom-SQL questions are where the LLM earns its keep.
 
 <!-- eval-score -->
-**Latest score (live API, 8 Nov 2026): 29/30 questions fully correct.**
+**Latest score (live API, 9 Nov 2026): 30/30 questions fully correct.**
 
 | Routing | Filters | Answer checks | Median latency | Answers written by the LLM |
 |---|---|---|---|---|
-| 97% | 100% | 100% | 2.6 s | 30/30 |
+| 100% | 100% | 100% | 1.9 s | 28/30 |
 
-The one miss: *"Profiles in the Bay of Bengal in September 2026"* went to custom SQL instead of profile search. The
-full per-question table is in [`eval/latest.md`](eval/latest.md).
+The benchmark asks its questions back to back, so Groq's free tier sometimes hits its tokens-per-minute limit. When
+that happens FloatChat still answers with a plain summary of the data, and the run log marks it *Answer built from
+the data alone*. The full per-question table is in [`eval/latest.md`](eval/latest.md).
 <!-- /eval-score -->
 
 ---
