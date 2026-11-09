@@ -2,10 +2,11 @@ import type { Metadata, Viewport } from "next";
 import { GeistMono } from "geist/font/mono";
 import { GeistSans } from "geist/font/sans";
 import { SiteHeader } from "@/components/site-header";
+import { SITE_URL } from "@/lib/config";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://floatchat.vercel.app"),
+  metadataBase: new URL(SITE_URL),
   title: { default: "FloatChat: ask the Indian Ocean", template: "%s · FloatChat" },
   description:
     "Ask questions about a year of real Argo ocean-float data in plain English. FloatChat writes the SQL or searches " +

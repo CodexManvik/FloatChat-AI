@@ -1,15 +1,15 @@
 {
   "api": "https://floatchat-ai-svjw.onrender.com",
-  "ran_at": "2026-11-08 18:16 UTC",
+  "ran_at": "2026-11-09 05:16 UTC",
   "summary": {
     "cases": 30,
-    "passed": 29,
-    "routing_accuracy": 0.967,
+    "passed": 30,
+    "routing_accuracy": 1.0,
     "filter_accuracy": 1.0,
     "answer_pass_rate": 1.0,
-    "median_latency_ms": 2595,
-    "llm_routed": 28,
-    "llm_wrote_answer": 30,
+    "median_latency_ms": 1929,
+    "llm_routed": 30,
+    "llm_wrote_answer": 28,
     "failed_requests": 0
   },
   "results": [
@@ -31,7 +31,7 @@
         "answered_by": "analytical"
       },
       "status": 200,
-      "latency_ms": 2701,
+      "latency_ms": 1249,
       "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
@@ -61,7 +61,7 @@
         "answered_by": "analytical"
       },
       "status": 200,
-      "latency_ms": 1498,
+      "latency_ms": 1783,
       "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
@@ -95,7 +95,7 @@
         "answered_by": "analytical"
       },
       "status": 200,
-      "latency_ms": 1712,
+      "latency_ms": 1839,
       "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
@@ -121,7 +121,7 @@
         "answered_by": "analytical"
       },
       "status": 200,
-      "latency_ms": 1957,
+      "latency_ms": 1772,
       "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
@@ -147,7 +147,7 @@
         "answered_by": "analytical"
       },
       "status": 200,
-      "latency_ms": 1836,
+      "latency_ms": 1976,
       "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
@@ -173,7 +173,7 @@
         "answered_by": "analytical"
       },
       "status": 200,
-      "latency_ms": 1807,
+      "latency_ms": 1572,
       "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
@@ -203,7 +203,7 @@
         "answered_by": "analytical"
       },
       "status": 200,
-      "latency_ms": 1931,
+      "latency_ms": 1764,
       "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
@@ -229,7 +229,7 @@
         "answered_by": "analytical"
       },
       "status": 200,
-      "latency_ms": 1818,
+      "latency_ms": 1782,
       "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
@@ -259,7 +259,7 @@
         "answered_by": "analytical"
       },
       "status": 200,
-      "latency_ms": 2003,
+      "latency_ms": 1883,
       "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
@@ -285,7 +285,7 @@
         "answered_by": "analytical"
       },
       "status": 200,
-      "latency_ms": 3129,
+      "latency_ms": 1999,
       "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
@@ -315,7 +315,7 @@
         "answered_by": "analytical"
       },
       "status": 200,
-      "latency_ms": 2463,
+      "latency_ms": 2010,
       "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
@@ -343,7 +343,7 @@
         "answered_by": "analytical"
       },
       "status": 200,
-      "latency_ms": 1996,
+      "latency_ms": 1492,
       "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
@@ -374,8 +374,8 @@
         "answered_by": "analytical"
       },
       "status": 200,
-      "latency_ms": 2165,
-      "router": "keywords",
+      "latency_ms": 1477,
+      "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
       "filters": true,
@@ -402,7 +402,7 @@
         "answered_by": "analytical"
       },
       "status": 200,
-      "latency_ms": 1672,
+      "latency_ms": 1625,
       "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
@@ -432,7 +432,7 @@
         "answered_by": "analytical"
       },
       "status": 200,
-      "latency_ms": 181,
+      "latency_ms": 2420,
       "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
@@ -464,7 +464,7 @@
         "answered_by": "analytical"
       },
       "status": 200,
-      "latency_ms": 2882,
+      "latency_ms": 2727,
       "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
@@ -491,7 +491,7 @@
         "answered_by": "analytical"
       },
       "status": 200,
-      "latency_ms": 2162,
+      "latency_ms": 1777,
       "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
@@ -523,7 +523,7 @@
         "answered_by": "semantic"
       },
       "status": 200,
-      "latency_ms": 7575,
+      "latency_ms": 7085,
       "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
@@ -553,7 +553,7 @@
         "answered_by": "semantic"
       },
       "status": 200,
-      "latency_ms": 3701,
+      "latency_ms": 16268,
       "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
@@ -581,7 +581,7 @@
         "answered_by": "semantic"
       },
       "status": 200,
-      "latency_ms": 2894,
+      "latency_ms": 10319,
       "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
@@ -611,7 +611,7 @@
         "answered_by": "semantic"
       },
       "status": 200,
-      "latency_ms": 10737,
+      "latency_ms": 12675,
       "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
@@ -643,9 +643,9 @@
         "answered_by": "semantic"
       },
       "status": 200,
-      "latency_ms": 10217,
-      "router": "keywords",
-      "llm_wrote_answer": true,
+      "latency_ms": 5667,
+      "router": "llm",
+      "llm_wrote_answer": false,
       "routing": true,
       "filters": true,
       "answer": true,
@@ -671,7 +671,7 @@
         "answered_by": "semantic"
       },
       "status": 200,
-      "latency_ms": 4217,
+      "latency_ms": 2374,
       "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
@@ -701,7 +701,7 @@
         "answered_by": "semantic"
       },
       "status": 200,
-      "latency_ms": 11665,
+      "latency_ms": 8044,
       "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
@@ -725,9 +725,9 @@
         "answered_by": "semantic"
       },
       "status": 200,
-      "latency_ms": 7732,
+      "latency_ms": 9042,
       "router": "llm",
-      "llm_wrote_answer": true,
+      "llm_wrote_answer": false,
       "routing": true,
       "filters": true,
       "answer": true,
@@ -747,23 +747,23 @@
         }
       },
       "got": {
-        "path": "analytical",
-        "intent": "custom",
+        "path": "semantic",
+        "intent": null,
         "filters": {
           "region": "Bay of Bengal",
           "month_num": 9,
           "year": 2026
         },
-        "answered_by": "analytical"
+        "answered_by": "semantic"
       },
       "status": 200,
-      "latency_ms": 4907,
+      "latency_ms": 193,
       "router": "llm",
       "llm_wrote_answer": true,
-      "routing": false,
+      "routing": true,
       "filters": true,
       "answer": true,
-      "note": "routed to analytical/custom"
+      "note": null
     },
     {
       "id": "follow-region",
@@ -787,7 +787,7 @@
         "answered_by": "analytical"
       },
       "status": 200,
-      "latency_ms": 3397,
+      "latency_ms": 1843,
       "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
@@ -819,7 +819,7 @@
         "answered_by": "analytical"
       },
       "status": 200,
-      "latency_ms": 5795,
+      "latency_ms": 2524,
       "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
@@ -849,7 +849,7 @@
         "answered_by": "analytical"
       },
       "status": 200,
-      "latency_ms": 2489,
+      "latency_ms": 1783,
       "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
@@ -879,7 +879,7 @@
         "answered_by": "semantic"
       },
       "status": 200,
-      "latency_ms": 13054,
+      "latency_ms": 3235,
       "router": "llm",
       "llm_wrote_answer": true,
       "routing": true,
