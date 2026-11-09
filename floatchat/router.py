@@ -64,6 +64,9 @@ def _prompt(question: str, history: list[dict]) -> str:
         '{"path": "analytical" | "semantic", "intent": <intent or null>, "filters": {...}, "question": <standalone>}\n\n'
         "path=analytical for statistics (averages, comparisons, counts, trends) answered with SQL; "
         "path=semantic for finding or describing particular profiles or floats.\n"
+        "A request to see, find or list profiles is semantic even when it names a place or a date "
+        "(e.g. 'Profiles off Sri Lanka in June 2026'). Use analytical only when the question asks for a number, "
+        "a comparison, a trend or a summary table.\n"
         f"Intents (analytical only):\n{intents}\n"
         f"Filter keys: {', '.join(FILTER_KEYS)}. region is one of: {', '.join(sorted(REGION_NAMES))}. "
         "month_num is 1-12; has_* filters are true when the question is about that sensor.\n"
